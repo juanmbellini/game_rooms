@@ -30,6 +30,7 @@
             <artifactId>akka-actor_2.12</artifactId>
             <version>${com.typesafe.akka.version}</version>
         </dependency>
+
         <!-- Logging -->
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -91,13 +92,11 @@
                     <appendAssemblyId>false</appendAssemblyId>
                     <attach>false</attach>
                     <finalName>${project.artifactId}-${project.version}</finalName>
-                    <!--<finalName>game-rooms</finalName>-->
-                    <!--<outputDirectory>${dir}</outputDirectory>-->
                 </configuration>
                 <executions>
                     <execution>
-                        <id>make-assembly</id> <!-- this is used for inheritance merges -->
-                        <phase>package</phase> <!-- bind to the packaging phase -->
+                        <id>make-assembly</id>
+                        <phase>package</phase>
                         <goals>
                             <goal>single</goal>
                         </goals>
