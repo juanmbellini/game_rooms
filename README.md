@@ -1,4 +1,4 @@
-# Game Rooms
+# Game Rooms [![Build Status](https://travis-ci.org/juanmbellini/game_rooms.svg?branch=master)](https://travis-ci.org/juanmbellini/game_rooms)
 
 Second part of the Advanced Techniques in Videogames course project.
 
