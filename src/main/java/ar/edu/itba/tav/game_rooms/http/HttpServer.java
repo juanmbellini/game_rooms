@@ -10,6 +10,8 @@ import akka.http.javadsl.ServerBinding;
 import akka.http.javadsl.marshallers.jackson.Jackson;
 import akka.http.javadsl.model.HttpRequest;
 import akka.http.javadsl.model.HttpResponse;
+import akka.http.javadsl.model.StatusCodes;
+import akka.http.javadsl.model.headers.Location;
 import akka.http.javadsl.server.*;
 import akka.stream.ActorMaterializer;
 import akka.stream.javadsl.Flow;
@@ -172,12 +174,18 @@ public class HttpServer extends AllDirectives {
     private Supplier<Route> createGameRoomRouteHandler() {
         return () ->
                 post(() ->
-                        entity(Jackson.unmarshaller(GameRoomDto.class),
-                                gameRoomDto -> {
-                                    tellToARequestHandlerActor(RequestHandlerActor.CreateGameRoomRequest
-                                            .createRequest(gameRoomDto.getName()));
-                                    return complete("OK!");
-                                }));
+                        extract(context -> context.getRequest().getUri(),
+                                uri -> entity(Jackson.unmarshaller(GameRoomDto.class),
+                                        gameRoomDto -> {
+                                            final String gameRoomName = gameRoomDto.getName();
+                                            tellToARequestHandlerActor(RequestHandlerActor.CreateGameRoomRequest
+                                                    .createRequest(gameRoomName));
+
+                                            final HttpResponse response = HttpResponse.create()
+                                                    .withStatus(StatusCodes.CREATED)
+                                                    .addHeader(Location.create(uri.addPathSegment(gameRoomName)));
+                                            return complete(response);
+                                        })));
     }
 
     /**
@@ -193,7 +201,10 @@ public class HttpServer extends AllDirectives {
                 delete(() -> {
                     tellToARequestHandlerActor(RequestHandlerActor.RemoveGameRoomRequest
                             .createRequest(gameRoomName));
-                    return complete("OK!");
+
+                    final HttpResponse response = HttpResponse.create()
+                            .withStatus(StatusCodes.NO_CONTENT);
+                    return complete(response);
                 });
     }
 
