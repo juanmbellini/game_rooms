@@ -1,21 +1,26 @@
 package ar.edu.itba.tav.game_rooms.http;
 
 import akka.NotUsed;
+import akka.actor.ActorPath;
+import akka.actor.ActorRef;
 import akka.actor.ActorSystem;
 import akka.http.javadsl.ConnectHttp;
 import akka.http.javadsl.Http;
 import akka.http.javadsl.ServerBinding;
+import akka.http.javadsl.marshallers.jackson.Jackson;
 import akka.http.javadsl.model.HttpRequest;
 import akka.http.javadsl.model.HttpResponse;
-import akka.http.javadsl.server.AllDirectives;
-import akka.http.javadsl.server.Route;
+import akka.http.javadsl.server.*;
 import akka.stream.ActorMaterializer;
 import akka.stream.javadsl.Flow;
+import ar.edu.itba.tav.game_rooms.http.dto.GameRoomDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
 import java.util.concurrent.CompletionStage;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * Class in charge of implementing an http server to access the platform.
@@ -48,13 +53,19 @@ public class HttpServer extends AllDirectives {
      */
     private final Flow<HttpRequest, HttpResponse, NotUsed> routeFlow;
 
+    private final ActorSystem actorSystem;
+    private final ActorPath gameRoomsManagerPath;
+
 
     /**
      * Private constructor.
      *
-     * @param system The {@link ActorSystem}.
+     * @param system               The {@link ActorSystem}.
+     * @param gameRoomsManagerPath The path of the game room manager.
      */
-    private HttpServer(ActorSystem system) {
+    private HttpServer(ActorSystem system, ActorPath gameRoomsManagerPath) {
+        this.actorSystem = system;
+        this.gameRoomsManagerPath = gameRoomsManagerPath;
         this.binding = null;
         this.http = Http.get(system);
         this.materializer = ActorMaterializer.create(system);
@@ -106,17 +117,105 @@ public class HttpServer extends AllDirectives {
 
     }
 
+    // ========================================================
+    // Route configuration
+    // ========================================================
+
+    private static final String GAME_ROOMS_ENDPOINT = "game-rooms";
+
     /**
      * Configures the routes this server will handle.
      *
      * @return The {@link Route} object with the routes this server will handle.
      */
     private Route configureRoutes() {
-        return route(
-                path("", () -> get(() -> complete("Root"))),
-                path("hello-world", () -> get(() -> complete("Hello World!")))
-        );
+        final Route[] routes = {
+                path(createGameRoomPathMatcher(), createGameRoomRouteHandler()),
+                path(deleteGameRoomPathMatcher(), removeGameRoomRouteHandler()),
+        };
+
+        return route(routes);
     }
+
+
+    // ========================================================
+    // Path matchers
+    // ========================================================
+
+    /**
+     * @return A {@link PathMatcher0} to match the create game room request (i.e /game-rooms).
+     */
+    private PathMatcher0 createGameRoomPathMatcher() {
+        return PathMatchers.segment(GAME_ROOMS_ENDPOINT);
+    }
+
+    /**
+     * @return A {@link PathMatcher1} of {@link String} to match the delete game room request (i.e /game-rooms/:name).
+     */
+    private PathMatcher1<String> deleteGameRoomPathMatcher() {
+        return PathMatchers.segment(GAME_ROOMS_ENDPOINT).slash(PathMatchers.segment()).concat(PathMatchers.pathEnd());
+    }
+
+
+    // ========================================================
+    // Request route handlers
+    // ========================================================
+
+    /**
+     * {@link Route} {@link Supplier} for a create game room request.
+     * Handles the request by communicating with a {@link RequestHandlerActor},
+     * sending a {@link RequestHandlerActor.CreateGameRoomRequest} message to it,
+     * getting the game room name from the received json.
+     *
+     * @return The {@link Route} {@link Supplier}.
+     */
+    private Supplier<Route> createGameRoomRouteHandler() {
+        return () ->
+                post(() ->
+                        entity(Jackson.unmarshaller(GameRoomDto.class),
+                                gameRoomDto -> {
+                                    tellToARequestHandlerActor(RequestHandlerActor.CreateGameRoomRequest
+                                            .createRequest(gameRoomDto.getName()));
+                                    return complete("OK!");
+                                }));
+    }
+
+    /**
+     * {@link Route} {@link Function} for a remove game room request, taking a string as an input argument.
+     * Handles the request by communicating with a {@link RequestHandlerActor},
+     * sending a {@link RequestHandlerActor.RemoveGameRoomRequest} message to it,
+     * getting the game room name from the input argument.
+     *
+     * @return The {@link Function} that creates a {@link Route}.
+     */
+    private Function<String, Route> removeGameRoomRouteHandler() {
+        return gameRoomName ->
+                delete(() -> {
+                    tellToARequestHandlerActor(RequestHandlerActor.RemoveGameRoomRequest
+                            .createRequest(gameRoomName));
+                    return complete("OK!");
+                });
+    }
+
+
+    // ========================================================
+    // Helper methods
+    // ========================================================
+
+    /**
+     * Method that wraps logic to create a new {@link RequestHandlerActor}, and communicate with it,
+     * sending the given {@code msg}, using {@link ActorRef#noSender()} as the message sender.
+     *
+     * @param msg The message to be sent.
+     */
+    private void tellToARequestHandlerActor(Object msg) {
+        actorSystem.actorOf(RequestHandlerActor.getProps(gameRoomsManagerPath)).tell(msg, ActorRef.noSender());
+    }
+
+
+    // ========================================================
+    // Factory methods
+    // ========================================================
 
     /**
      * Creates a new {@link HttpServer}.
@@ -124,8 +223,8 @@ public class HttpServer extends AllDirectives {
      * @param actorSystem The {@link ActorSystem}.
      * @return A new {@link HttpServer}.
      */
-    public static HttpServer createServer(ActorSystem actorSystem) {
+    public static HttpServer createServer(ActorSystem actorSystem, ActorPath gameRoomsManagerPath) {
         LOGGER.info("Creating a new HttpServer instance using {} actor system", actorSystem);
-        return new HttpServer(actorSystem);
+        return new HttpServer(actorSystem, gameRoomsManagerPath);
     }
 }
