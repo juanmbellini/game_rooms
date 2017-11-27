@@ -18,6 +18,7 @@
         <maven-assembly-plugin.version>3.1.0</maven-assembly-plugin.version>
 
         <com.typesafe.akka.version>2.5.6</com.typesafe.akka.version>
+        <com.typesafe.akka-http.version>10.0.10</com.typesafe.akka-http.version>
         <org.slf4j.version>1.7.5</org.slf4j.version>
         <logback.version>1.1.2</logback.version>
         <junit.version>RELEASE</junit.version>
@@ -29,6 +30,21 @@
             <groupId>com.typesafe.akka</groupId>
             <artifactId>akka-actor_2.12</artifactId>
             <version>${com.typesafe.akka.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-stream_2.12</artifactId>
+            <version>${com.typesafe.akka.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-http_2.12</artifactId>
+            <version>${com.typesafe.akka-http.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-http-jackson_2.12</artifactId>
+            <version>${com.typesafe.akka-http.version}</version>
         </dependency>
 
         <!-- Logging -->
