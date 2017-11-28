@@ -10,6 +10,7 @@ import akka.http.javadsl.ServerBinding;
 import akka.http.javadsl.marshallers.jackson.Jackson;
 import akka.http.javadsl.model.HttpRequest;
 import akka.http.javadsl.model.HttpResponse;
+import akka.http.javadsl.model.RequestEntity;
 import akka.http.javadsl.model.StatusCodes;
 import akka.http.javadsl.model.headers.Location;
 import akka.http.javadsl.server.*;
@@ -21,17 +22,20 @@ import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor;
 import ar.edu.itba.tav.game_rooms.http.dto.GameRoomDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.squbs.marshallers.MarshalUnmarshal;
 import scala.concurrent.Await;
 import scala.concurrent.Future;
 import scala.concurrent.duration.Duration;
 import scala.concurrent.duration.FiniteDuration;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 /**
  * Class in charge of implementing an http server to access the platform.
@@ -148,7 +152,8 @@ public class HttpServer extends AllDirectives {
      */
     private Route configureRoutes() {
         final Route[] routes = {
-                path(createGameRoomPathMatcher(), createGameRoomRouteHandler()),
+                path(gameRoomsCollectionPathMatcher(), getAllGameRoomsRouteHandler()),
+                path(gameRoomsCollectionPathMatcher(), createGameRoomRouteHandler()),
                 path(deleteGameRoomPathMatcher(), removeGameRoomRouteHandler()),
         };
 
@@ -161,9 +166,9 @@ public class HttpServer extends AllDirectives {
     // ========================================================
 
     /**
-     * @return A {@link PathMatcher0} to match the create game room request (i.e /game-rooms).
+     * @return A {@link PathMatcher0} to match the game rooms collection path (i.e /game-rooms).
      */
-    private PathMatcher0 createGameRoomPathMatcher() {
+    private PathMatcher0 gameRoomsCollectionPathMatcher() {
         return PathMatchers.segment(GAME_ROOMS_ENDPOINT);
     }
 
@@ -178,6 +183,21 @@ public class HttpServer extends AllDirectives {
     // ========================================================
     // Request route handlers
     // ========================================================
+
+    /**
+     * {@link Route} {@link Supplier} for a get all game rooms request.
+     * Handles the request by communicating with a {@link RequestHandlerActor},
+     * sending a {@link RequestHandlerActor.GetAllGameRoomsRequest} message to it.
+     *
+     * @return The {@link Route} {@link Supplier}.
+     */
+    private Supplier<Route> getAllGameRoomsRouteHandler() {
+        return () ->
+                get(() -> {
+                    final HttpResponse response = getAllGameRoomsResponse();
+                    return complete(response);
+                });
+    }
 
     /**
      * {@link Route} {@link Supplier} for a create game room request.
@@ -220,6 +240,35 @@ public class HttpServer extends AllDirectives {
     // ========================================================
 
     /**
+     * Creates an {@link HttpResponse} for a game rooms retrieval request.
+     *
+     * @return The {@link HttpResponse} for this request.
+     */
+    private HttpResponse getAllGameRoomsResponse() {
+        final long timeout = 5000;
+        RequestHandlerActor.GetAllGameRoomsRequest request =
+                RequestHandlerActor.GetAllGameRoomsRequest.createRequest(timeout);
+        try {
+            final List<String> gameRoomNames = askToARequestHandlerActor(request, timeout);
+            final List<GameRoomDto> gameRooms = gameRoomNames.stream()
+                    .map(GameRoomDto::new)
+                    .collect(Collectors.toList());
+            final CompletionStage<RequestEntity> marshalled =
+                    new MarshalUnmarshal(actorSystem.dispatcher(), materializer)
+                            .apply(Jackson.marshaller(), gameRooms);
+
+            return HttpResponse.create()
+                    .withStatus(StatusCodes.OK)
+                    .withEntity(marshalled.toCompletableFuture().get());
+
+        } catch (TimeoutException e) {
+            return HttpResponse.create().withStatus(StatusCodes.REQUEST_TIMEOUT);
+        } catch (Exception e) {
+            return HttpResponse.create().withStatus(StatusCodes.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
      * Creates an {@link HttpResponse} for a game room creation request.
      *
      * @param context     The {@link RequestContext} from which request data will be taken.
@@ -227,7 +276,7 @@ public class HttpServer extends AllDirectives {
      * @return The {@link HttpResponse} for this request.
      */
     private HttpResponse createGameRoomResponse(RequestContext context, GameRoomDto gameRoomDto) {
-        final long timeout = 5000;
+        final long timeout = 2000;
         final String gameRoomName = gameRoomDto.getName();
         RequestHandlerActor.CreateGameRoomRequest request =
                 RequestHandlerActor.CreateGameRoomRequest.createRequest(gameRoomName, timeout);
@@ -291,12 +340,13 @@ public class HttpServer extends AllDirectives {
      * @return The Object returned as a response.
      * @throws Exception If anything goes wrong.
      */
-    private Object askToARequestHandlerActor(Object question, long timeout) throws Exception {
+    private <T> T askToARequestHandlerActor(Object question, long timeout) throws Exception {
         final ActorRef handlerActor = actorSystem.actorOf(RequestHandlerActor.getProps(gameRoomsManagerPath));
         final FiniteDuration duration = Duration.create(timeout, TimeUnit.MILLISECONDS);
         final Future<?> future = Patterns.ask(handlerActor, question, new Timeout(duration));
 
-        return Await.result(future, duration);
+        //noinspection unchecked
+        return (T) Await.result(future, duration);
     }
 
 

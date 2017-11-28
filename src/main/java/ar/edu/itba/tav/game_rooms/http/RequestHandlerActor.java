@@ -7,6 +7,8 @@ import akka.actor.Props;
 import akka.japi.pf.ReceiveBuilder;
 import akka.pattern.Patterns;
 import akka.util.Timeout;
+import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor;
+import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor.GetAllGameRoomsMessage;
 import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor.CreateGameRoomMessage;
 import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor.GameRoomCreationResult;
 import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor.GameRoomRemovalResult;
@@ -16,6 +18,8 @@ import scala.concurrent.Future;
 import scala.concurrent.duration.Duration;
 import scala.concurrent.duration.FiniteDuration;
 
+import java.util.LinkedList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -40,9 +44,21 @@ import java.util.concurrent.TimeUnit;
     @Override
     public Receive createReceive() {
         return ReceiveBuilder.create()
+                .match(GetAllGameRoomsRequest.class, this::handlerGetAllGameRoomsRequest)
                 .match(CreateGameRoomRequest.class, this::handleCreateGameRoomRequest)
                 .match(RemoveGameRoomRequest.class, this::handleRemoveGameRoomRequest)
                 .build();
+    }
+
+    /**
+     * Handles a {@link GetAllGameRoomsRequest}.
+     *
+     * @param request The request to be handled.
+     */
+    private void handlerGetAllGameRoomsRequest(GetAllGameRoomsRequest request) {
+        final GetAllGameRoomsMessage msg = GetAllGameRoomsMessage.getMessage();
+        final List<String> gameRooms = askTheGameRoomManager(msg, request.getTimeout(), new LinkedList<>());
+        reportSender(gameRooms);
     }
 
     /**
@@ -132,19 +148,62 @@ import java.util.concurrent.TimeUnit;
     }
 
     /**
+     * An abstract request that contains a timeout value.
+     */
+    private abstract static class TimeoutRequest {
+
+        /**
+         * The timeout for the request.
+         */
+        private final long timeout;
+
+
+        /**
+         * @param timeout The timeout for the request.
+         */
+        private TimeoutRequest(long timeout) {
+            this.timeout = timeout;
+        }
+
+        /**
+         * @return The timeout for the request.
+         */
+        /* package */ long getTimeout() {
+            return timeout;
+        }
+    }
+
+    /* package */ static class GetAllGameRoomsRequest extends TimeoutRequest {
+
+        /**
+         * @param timeout The timeout for the request.
+         */
+        private GetAllGameRoomsRequest(long timeout) {
+            super(timeout);
+        }
+
+        /**
+         * Creates a new {@link GetAllGameRoomsRequest}.
+         *
+         * @param timeout The timeout for the request.
+         * @return The created request.
+         */
+        /* package */
+        static GetAllGameRoomsRequest createRequest(long timeout) {
+            return new GetAllGameRoomsRequest(timeout);
+        }
+    }
+
+    /**
      * An abstract request representing an operation over a game room.
      */
-    private abstract static class GameRoomOperationRequest {
+    private abstract static class GameRoomOperationRequest extends TimeoutRequest {
 
         /**
          * The name of the game room to which an operation will be performed.
          */
         private final String gameRoomName;
 
-        /**
-         * The timeout for the request.
-         */
-        private final long timeout;
 
         /**
          * Private constructor.
@@ -153,8 +212,8 @@ import java.util.concurrent.TimeUnit;
          * @param timeout      The timeout for the request.
          */
         private GameRoomOperationRequest(String gameRoomName, long timeout) {
+            super(timeout);
             this.gameRoomName = gameRoomName;
-            this.timeout = timeout;
         }
 
         /**
@@ -162,13 +221,6 @@ import java.util.concurrent.TimeUnit;
          */
         /* package */ String getGameRoomName() {
             return gameRoomName;
-        }
-
-        /**
-         * @return The timeout for the request.
-         */
-        /* package */ long getTimeout() {
-            return timeout;
         }
     }
 

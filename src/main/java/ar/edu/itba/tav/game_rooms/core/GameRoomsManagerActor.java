@@ -4,14 +4,14 @@ import akka.actor.*;
 import akka.japi.pf.ReceiveBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import scala.collection.immutable.Stream;
+import scala.compat.java8.ScalaStreamSupport;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
 
 //import ar.edu.itba.tav.game_rooms.exceptions.NoSuchGameRoomException;
 
@@ -48,12 +48,35 @@ public class GameRoomsManagerActor extends AbstractActor {
     @Override
     public Receive createReceive() {
         return ReceiveBuilder.create()
+                .match(GetAllGameRoomsMessage.class, msg -> this.getAllGameRooms())
                 .match(CreateGameRoomMessage.class, msg -> this.startGameRoom(msg.getGameRoomName()))
                 .match(RemoveGameRoomMessage.class, msg -> this.stopGameRoom(msg.getGameRoomName()))
                 .match(Terminated.class,
                         terminated -> this.terminatedActors.containsKey(terminated.getActor()),
                         terminated -> this.removeGameRoom(terminated.getActor()))
                 .build();
+    }
+
+    /**
+     * Replies with all the existing game rooms (i.e the children name).
+     */
+    private void getAllGameRooms() {
+        final ActorRef requester = this.getSender();
+        final List<String> gameRooms = ScalaStreamSupport.stream(this.context().children())
+                .map(ActorRef::path)
+                .map(ActorPath::name)
+                .map(name -> {
+                    try {
+                        return URLDecoder.decode(name, UTF8_ENCODING);
+                    } catch (UnsupportedEncodingException e) {
+                        // This can't happen, but we must catch this exception.
+                        LOGGER.error("Some unexpected thing happened. Exception message: {}", e.getMessage());
+                        LOGGER.debug("Stacktrace: ", e);
+                        throw new RuntimeException("Could not url decode game room name", e);
+                    }
+                })
+                .collect(Collectors.toList());
+        requester.tell(gameRooms, this.getSelf());
     }
 
     /**
@@ -197,6 +220,28 @@ public class GameRoomsManagerActor extends AbstractActor {
      */
     public static Props getProps() {
         return Props.create(GameRoomsManagerActor.class, GameRoomsManagerActor::new);
+    }
+
+
+    /**
+     * A {@link GameRoomMessage} that is used to create a new game room.
+     */
+    public final static class GetAllGameRoomsMessage {
+
+        /**
+         * Private constructor.
+         */
+        private GetAllGameRoomsMessage() {
+        }
+
+        /**
+         * Static method to create a {@link GetAllGameRoomsMessage}.
+         *
+         * @return The new {@link GetAllGameRoomsMessage}.
+         */
+        public static GetAllGameRoomsMessage getMessage() {
+            return new GetAllGameRoomsMessage();
+        }
     }
 
     /**
