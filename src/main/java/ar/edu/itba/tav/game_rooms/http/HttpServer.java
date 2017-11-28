@@ -193,10 +193,12 @@ public class HttpServer extends AllDirectives {
      */
     private Supplier<Route> getAllGameRoomsRouteHandler() {
         return () ->
-                get(() -> {
-                    final HttpResponse response = getAllGameRoomsResponse();
-                    return complete(response);
-                });
+                get(() ->
+                        extract(Function.identity(),
+                                ctx -> {
+                                    final HttpResponse response = getAllGameRoomsResponse(ctx);
+                                    return complete(response);
+                                }));
     }
 
     /**
@@ -242,16 +244,17 @@ public class HttpServer extends AllDirectives {
     /**
      * Creates an {@link HttpResponse} for a game rooms retrieval request.
      *
+     * @param context The {@link RequestContext} from which request data will be taken.
      * @return The {@link HttpResponse} for this request.
      */
-    private HttpResponse getAllGameRoomsResponse() {
+    private HttpResponse getAllGameRoomsResponse(RequestContext context) {
         final long timeout = 5000;
         RequestHandlerActor.GetAllGameRoomsRequest request =
                 RequestHandlerActor.GetAllGameRoomsRequest.createRequest(timeout);
         try {
             final List<String> gameRoomNames = askToARequestHandlerActor(request, timeout);
             final List<GameRoomDto> gameRooms = gameRoomNames.stream()
-                    .map(GameRoomDto::new)
+                    .map(name -> new GameRoomDto(name, context.getRequest().getUri().addPathSegment(name)))
                     .collect(Collectors.toList());
             final CompletionStage<RequestEntity> marshalled =
                     new MarshalUnmarshal(actorSystem.dispatcher(), materializer)

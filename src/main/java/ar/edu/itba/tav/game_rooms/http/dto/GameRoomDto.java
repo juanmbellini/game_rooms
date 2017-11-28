@@ -1,5 +1,14 @@
 package ar.edu.itba.tav.game_rooms.http.dto;
 
+import akka.http.javadsl.model.Uri;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.databind.SerializerProvider;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.StdSerializer;
+
+import java.io.IOException;
+
 /**
  * Data transfer object for a game room.
  */
@@ -8,7 +17,16 @@ public class GameRoomDto {
     /**
      * The game room name.
      */
+    @JsonProperty
     private String name;
+
+    /**
+     * The url of the location of the game room represented by this dto.
+     */
+    @SuppressWarnings({"FieldCanBeLocal", "unused"})
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    @JsonSerialize(using = UriSerializer.class)
+    private Uri locationUrl;
 
     /**
      * Default constructor used by Jackson.
@@ -20,10 +38,12 @@ public class GameRoomDto {
     /**
      * Constructor.
      *
-     * @param name The game room name.
+     * @param name        The game room name.
+     * @param locationUrl The url of the location of the game room represented by this dto.
      */
-    public GameRoomDto(String name) {
+    public GameRoomDto(String name, Uri locationUrl) {
         this.name = name;
+        this.locationUrl = locationUrl;
     }
 
     /**
@@ -32,5 +52,24 @@ public class GameRoomDto {
     public String getName() {
         return name;
     }
+
+    /**
+     * A {@link com.fasterxml.jackson.databind.JsonSerializer} to serialize {@link Uri}s.
+     */
+    private static final class UriSerializer extends StdSerializer<Uri> {
+
+        /**
+         * Private constructor.
+         */
+        private UriSerializer() {
+            super(Uri.class);
+        }
+
+        @Override
+        public void serialize(Uri value, JsonGenerator gen, SerializerProvider provider) throws IOException {
+            gen.writeString(value.toString());
+        }
+    }
+
 }
 
