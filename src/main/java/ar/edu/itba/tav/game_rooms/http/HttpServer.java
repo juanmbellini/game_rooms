@@ -55,7 +55,14 @@ public class HttpServer extends AllDirectives {
      */
     private final Flow<HttpRequest, HttpResponse, NotUsed> routeFlow;
 
+    /**
+     * The {@link ActorSystem} to which this server must communicate with.
+     */
     private final ActorSystem actorSystem;
+
+    /**
+     * The {@link ActorPath} for the games room manager {@link akka.actor.Actor}.
+     */
     private final ActorPath gameRoomsManagerPath;
 
 
