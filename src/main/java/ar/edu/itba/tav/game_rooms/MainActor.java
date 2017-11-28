@@ -1,10 +1,11 @@
 package ar.edu.itba.tav.game_rooms;
 
-import akka.actor.AbstractActor;
-import akka.actor.ActorRef;
-import akka.actor.Props;
+import akka.actor.*;
+import akka.japi.pf.DeciderBuilder;
 import akka.japi.pf.ReceiveBuilder;
 import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor;
+import ar.edu.itba.tav.game_rooms.exceptions.NameAlreadyInUseException;
+import ar.edu.itba.tav.game_rooms.exceptions.NoSuchGameRoomException;
 import ar.edu.itba.tav.game_rooms.http.HttpServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +55,11 @@ public class MainActor extends AbstractActor {
                 .start(message.getHttpServerHostname(), message.getHttpServerPort());
 
         this.started = true;
+    }
+
+    @Override
+    public SupervisorStrategy supervisorStrategy() {
+        return MainActorSupervisionStrategy.getInstance();
     }
 
     /**
@@ -116,6 +122,37 @@ public class MainActor extends AbstractActor {
         /* package */
         static StartSystemMessage createMessage(String httpServerHostname, int httpServerPort) {
             return new StartSystemMessage(httpServerHostname, httpServerPort);
+        }
+    }
+
+    /**
+     * A custom {@link OneForOneStrategy} for this {@link Actor}.
+     */
+    private final static class MainActorSupervisionStrategy extends OneForOneStrategy {
+
+        /**
+         * The single instance of this {@link OneForOneStrategy}.
+         */
+        private final static MainActorSupervisionStrategy SINGLETON = new MainActorSupervisionStrategy();
+
+        /**
+         * Private constructor.
+         */
+        private MainActorSupervisionStrategy() {
+            super(false,
+                    DeciderBuilder
+                            .match(NameAlreadyInUseException.class, e -> resume())
+                            .match(NoSuchGameRoomException.class, e -> resume())
+                            .match(Throwable.class, e -> stop())
+                            .build()
+            );
+        }
+
+        /**
+         * @return The single instance of this {@link OneForOneStrategy}.
+         */
+        private static MainActorSupervisionStrategy getInstance() {
+            return SINGLETON;
         }
     }
 
