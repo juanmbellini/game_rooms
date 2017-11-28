@@ -2,9 +2,21 @@ package ar.edu.itba.tav.game_rooms.http;
 
 import akka.actor.AbstractActor;
 import akka.actor.ActorPath;
+import akka.actor.ActorSelection;
 import akka.actor.Props;
 import akka.japi.pf.ReceiveBuilder;
-import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor;
+import akka.pattern.Patterns;
+import akka.util.Timeout;
+import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor.CreateGameRoomMessage;
+import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor.GameRoomCreationResult;
+import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor.GameRoomRemovalResult;
+import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor.RemoveGameRoomMessage;
+import scala.concurrent.Await;
+import scala.concurrent.Future;
+import scala.concurrent.duration.Duration;
+import scala.concurrent.duration.FiniteDuration;
+
+import java.util.concurrent.TimeUnit;
 
 /**
  * {@link akka.actor.Actor} in charge of handling
@@ -30,7 +42,6 @@ import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor;
         return ReceiveBuilder.create()
                 .match(CreateGameRoomRequest.class, this::handleCreateGameRoomRequest)
                 .match(RemoveGameRoomRequest.class, this::handleRemoveGameRoomRequest)
-                .match(GameRoomsManagerActor.RemoveGameRoomMessage.class, System.out::println)
                 .build();
     }
 
@@ -40,7 +51,9 @@ import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor;
      * @param request The request to be handled.
      */
     private void handleCreateGameRoomRequest(CreateGameRoomRequest request) {
-        tellTheGameRoomManager(GameRoomsManagerActor.CreateGameRoomMessage.getMessage(request.getGameRoomName()));
+        final CreateGameRoomMessage msg = CreateGameRoomMessage.getMessage(request.getGameRoomName());
+        final GameRoomCreationResult result = askTheGameRoomManagerToCreateAGameRoom(msg, request.getTimeout());
+        reportSender(result);
     }
 
     /**
@@ -49,16 +62,62 @@ import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor;
      * @param request The request to be handled.
      */
     private void handleRemoveGameRoomRequest(RemoveGameRoomRequest request) {
-        tellTheGameRoomManager(GameRoomsManagerActor.RemoveGameRoomMessage.getMessage(request.getGameRoomName()));
+        final RemoveGameRoomMessage msg = RemoveGameRoomMessage.getMessage(request.getGameRoomName());
+        final GameRoomRemovalResult result = askTheGameRoomManagerToRemoveAGameRoom(msg, request.getTimeout());
+        reportSender(result);
+    }
+
+
+    /**
+     * Asks the game room manager to create a game room.
+     *
+     * @param question The {@link CreateGameRoomMessage} representing the request to the game room manager.
+     * @param timeout  The timeout for the request.
+     * @return The results of the request.
+     */
+    private GameRoomCreationResult askTheGameRoomManagerToCreateAGameRoom(CreateGameRoomMessage question, long timeout) {
+        return askTheGameRoomManager(question, timeout, GameRoomCreationResult.FAILURE);
     }
 
     /**
-     * Method that wraps logic to send a message to the game rooms manager by this actor.
+     * Asks the game room manager to remove a game room.
      *
-     * @param msg The message to be sent.
+     * @param question The {@link RemoveGameRoomMessage} representing the request to the game room manager.
+     * @param timeout  The timeout for the request.
+     * @return The results of the request.
      */
-    private void tellTheGameRoomManager(Object msg) {
-        this.getContext().getSystem().actorSelection(gameRoomManagerPath).tell(msg, getSelf());
+    private GameRoomRemovalResult askTheGameRoomManagerToRemoveAGameRoom(RemoveGameRoomMessage question, long timeout) {
+        return askTheGameRoomManager(question, timeout, GameRoomRemovalResult.FAILURE);
+    }
+
+    /**
+     * Method that wraps logic to ask something to the game rooms manager.
+     *
+     * @param question     The object representing the "question" to the game room manager.
+     * @param timeout      The timeout of the question.
+     * @param defaultValue The default value to get when there is any issue.
+     * @param <T>          The concrete type of the response.
+     * @return The response of the question.
+     */
+    private <T> T askTheGameRoomManager(Object question, long timeout, T defaultValue) {
+        final ActorSelection gameRoomManager = getContext().getSystem().actorSelection(gameRoomManagerPath);
+        final FiniteDuration duration = Duration.create(timeout, TimeUnit.MILLISECONDS);
+        Future<Object> future = Patterns.ask(gameRoomManager, question, new Timeout(duration));
+        try {
+            //noinspection unchecked
+            return (T) Await.result(future, duration);
+        } catch (Throwable e) {
+            return defaultValue;
+        }
+    }
+
+    /**
+     * Replies the sender with the given {@code result} value.
+     *
+     * @param result The value to send as a reply to the sender.
+     */
+    private void reportSender(Object result) {
+        this.getSender().tell(result, this.getSelf());
     }
 
     /**
@@ -82,14 +141,20 @@ import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor;
          */
         private final String gameRoomName;
 
+        /**
+         * The timeout for the request.
+         */
+        private final long timeout;
 
         /**
          * Private constructor.
          *
          * @param gameRoomName The name of the game room to which an operation will be performed.
+         * @param timeout      The timeout for the request.
          */
-        private GameRoomOperationRequest(String gameRoomName) {
+        private GameRoomOperationRequest(String gameRoomName, long timeout) {
             this.gameRoomName = gameRoomName;
+            this.timeout = timeout;
         }
 
         /**
@@ -97,6 +162,13 @@ import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor;
          */
         /* package */ String getGameRoomName() {
             return gameRoomName;
+        }
+
+        /**
+         * @return The timeout for the request.
+         */
+        /* package */ long getTimeout() {
+            return timeout;
         }
     }
 
@@ -109,20 +181,22 @@ import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor;
          * Private constructor.
          *
          * @param gameRoomName The name of the game room to be created.
+         * @param timeout      The timeout for the request.
          */
-        private CreateGameRoomRequest(String gameRoomName) {
-            super(gameRoomName);
+        private CreateGameRoomRequest(String gameRoomName, long timeout) {
+            super(gameRoomName, timeout);
         }
 
         /**
          * Creates a new {@link CreateGameRoomRequest}.
          *
          * @param gameRoomName The name of the game room to be created.
+         * @param timeout      The timeout for the request.
          * @return The created request.
          */
         /* package */
-        static CreateGameRoomRequest createRequest(String gameRoomName) {
-            return new CreateGameRoomRequest(gameRoomName);
+        static CreateGameRoomRequest createRequest(String gameRoomName, long timeout) {
+            return new CreateGameRoomRequest(gameRoomName, timeout);
         }
     }
 
@@ -135,20 +209,22 @@ import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor;
          * Private constructor.
          *
          * @param gameRoomName The name of the game room to be removed.
+         * @param timeout      The timeout for the request.
          */
-        private RemoveGameRoomRequest(String gameRoomName) {
-            super(gameRoomName);
+        private RemoveGameRoomRequest(String gameRoomName, long timeout) {
+            super(gameRoomName, timeout);
         }
 
         /**
          * Creates a new {@link RemoveGameRoomRequest}.
          *
          * @param gameRoomName The name of the game room to be removed.
+         * @param timeout      The timeout for the request.
          * @return The created request.
          */
         /* package */
-        static RemoveGameRoomRequest createRequest(String gameRoomName) {
-            return new RemoveGameRoomRequest(gameRoomName);
+        static RemoveGameRoomRequest createRequest(String gameRoomName, long timeout) {
+            return new RemoveGameRoomRequest(gameRoomName, timeout);
         }
     }
 }
