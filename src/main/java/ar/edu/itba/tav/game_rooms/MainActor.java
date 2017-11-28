@@ -4,8 +4,6 @@ import akka.actor.*;
 import akka.japi.pf.DeciderBuilder;
 import akka.japi.pf.ReceiveBuilder;
 import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor;
-import ar.edu.itba.tav.game_rooms.exceptions.NameAlreadyInUseException;
-import ar.edu.itba.tav.game_rooms.exceptions.NoSuchGameRoomException;
 import ar.edu.itba.tav.game_rooms.http.HttpServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -140,12 +138,10 @@ public class MainActor extends AbstractActor {
          */
         private MainActorSupervisionStrategy() {
             super(false,
-                    DeciderBuilder
-                            .match(NameAlreadyInUseException.class, e -> resume())
-                            .match(NoSuchGameRoomException.class, e -> resume())
-                            .match(Throwable.class, e -> stop())
-                            .build()
-            );
+                    DeciderBuilder.match(Throwable.class, e -> {
+                        LOGGER.warn("An actor has been stopped because it throw an exception");
+                        return stop();
+                    }).build());
         }
 
         /**
@@ -155,5 +151,4 @@ public class MainActor extends AbstractActor {
             return SINGLETON;
         }
     }
-
 }
