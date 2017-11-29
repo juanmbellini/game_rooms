@@ -2,13 +2,16 @@ package ar.edu.itba.tav.game_rooms.messages;
 
 import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor;
 
+import java.util.Collections;
+import java.util.Set;
+
 /**
  * Class defining messages for game room operations.
  */
 public class GameRoomOperationMessages {
 
     // ========================================================================
-    // Result messages
+    // Response messages
     // ========================================================================
 
     /**
@@ -25,6 +28,10 @@ public class GameRoomOperationMessages {
          * The game room was created successfully.
          */
         CREATED,
+        /**
+         * The specified parameters are illegal or invalid.
+         */
+        INVALID,
         /**
          * There is another game room with the given name.
          */
@@ -51,6 +58,61 @@ public class GameRoomOperationMessages {
          * There was an unexpected failure when trying to create the game room.
          */
         FAILURE,
+    }
+
+    /**
+     * Message representing a game room (used to transfer game room data between actors).
+     */
+    public static class GameRoomDataMessage {
+
+        /**
+         * The game room name.
+         */
+        private final String name;
+
+        /**
+         * The game room capacity.
+         */
+        private final int capacity;
+
+        /**
+         * The players in the game room.
+         */
+        private final Set<String> players;
+
+        /**
+         * Constructor.
+         *
+         * @param name     The game room name.
+         * @param capacity The game room capacity.
+         * @param players  The players in the game room.
+         */
+        public GameRoomDataMessage(String name, int capacity, Set<String> players) {
+            this.name = name;
+            this.capacity = capacity;
+            this.players = Collections.unmodifiableSet(players);
+        }
+
+        /**
+         * @return The game room name.
+         */
+        public String getName() {
+            return name;
+        }
+
+        /**
+         * @return The game room capacity.
+         */
+        public int getCapacity() {
+            return capacity;
+        }
+
+        /**
+         * @return The players in the game room.
+         */
+        public Set<String> getPlayers() {
+            return players;
+        }
     }
 
 
@@ -113,22 +175,37 @@ public class GameRoomOperationMessages {
     public final static class CreateGameRoomMessage extends GameRoomMessage {
 
         /**
+         * The capacity of the game room to be created.
+         */
+        private final int capacity;
+
+        /**
          * Private constructor.
          *
          * @param gameRoomName The name for the new game room.
+         * @param capacity     The capacity of the game room to be created.
          */
-        private CreateGameRoomMessage(String gameRoomName) {
+        private CreateGameRoomMessage(String gameRoomName, int capacity) {
             super(gameRoomName);
+            this.capacity = capacity;
+        }
+
+        /**
+         * @return The capacity of the game room to be created.
+         */
+        public int getCapacity() {
+            return capacity;
         }
 
         /**
          * Static method to create a {@link CreateGameRoomMessage}.
          *
          * @param gameRoomName The name for the new game room.
+         * @param capacity     The capacity of the game room to be created.
          * @return The new {@link CreateGameRoomMessage}.
          */
-        public static CreateGameRoomMessage getMessage(String gameRoomName) {
-            return new CreateGameRoomMessage(gameRoomName);
+        public static CreateGameRoomMessage getMessage(String gameRoomName, int capacity) {
+            return new CreateGameRoomMessage(gameRoomName, capacity);
         }
     }
 
@@ -154,6 +231,27 @@ public class GameRoomOperationMessages {
          */
         public static RemoveGameRoomMessage getMessage(String gameRoomName) {
             return new RemoveGameRoomMessage(gameRoomName);
+        }
+    }
+
+    /**
+     * Message to be sent from the game room manager to a game room to request it's data.
+     */
+    public final static class GetGameRoomDataMessage {
+
+        /**
+         * Private constructor.
+         */
+        private GetGameRoomDataMessage() {
+        }
+
+        /**
+         * Static method to create a {@link GetGameRoomDataMessage}.
+         *
+         * @return The new {@link GetGameRoomDataMessage}.
+         */
+        public static GetGameRoomDataMessage getMessage() {
+            return new GetGameRoomDataMessage();
         }
     }
 }

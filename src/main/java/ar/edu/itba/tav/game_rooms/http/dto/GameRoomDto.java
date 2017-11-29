@@ -21,6 +21,12 @@ public class GameRoomDto {
     private String name;
 
     /**
+     * The game room capacity
+     */
+    @JsonProperty
+    private int capacity;
+
+    /**
      * The url of the location of the game room represented by this dto.
      */
     @SuppressWarnings({"FieldCanBeLocal", "unused"})
@@ -39,10 +45,12 @@ public class GameRoomDto {
      * Constructor.
      *
      * @param name        The game room name.
+     * @param capacity    The game room capacity
      * @param locationUrl The url of the location of the game room represented by this dto.
      */
-    public GameRoomDto(String name, Uri locationUrl) {
+    public GameRoomDto(String name, int capacity, Uri locationUrl) {
         this.name = name;
+        this.capacity = capacity;
         this.locationUrl = locationUrl;
     }
 
@@ -51,6 +59,13 @@ public class GameRoomDto {
      */
     public String getName() {
         return name;
+    }
+
+    /**
+     * @return The game room capacity
+     */
+    public int getCapacity() {
+        return capacity;
     }
 
     /**

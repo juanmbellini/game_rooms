@@ -87,24 +87,39 @@ public class HttpRequestMessages {
     public static final class CreateGameRoomRequest extends GameRoomOperationRequest {
 
         /**
+         * The capacity of the game room to be created.
+         */
+        private final int capacity;
+
+        /**
          * Private constructor.
          *
          * @param gameRoomName The name of the game room to be created.
+         * @param capacity     The capacity of the game room to be created.
          * @param timeout      The timeout for the request.
          */
-        private CreateGameRoomRequest(String gameRoomName, long timeout) {
+        private CreateGameRoomRequest(String gameRoomName, int capacity, long timeout) {
             super(gameRoomName, timeout);
+            this.capacity = capacity;
+        }
+
+        /**
+         * @return The capacity of the game room to be created.
+         */
+        public int getCapacity() {
+            return capacity;
         }
 
         /**
          * Creates a new {@link CreateGameRoomRequest}.
          *
          * @param gameRoomName The name of the game room to be created.
+         * @param capacity     The capacity of the game room to be created.
          * @param timeout      The timeout for the request.
          * @return The created request.
          */
-        public static CreateGameRoomRequest createRequest(String gameRoomName, long timeout) {
-            return new CreateGameRoomRequest(gameRoomName, timeout);
+        public static CreateGameRoomRequest createRequest(String gameRoomName, int capacity, long timeout) {
+            return new CreateGameRoomRequest(gameRoomName, capacity, timeout);
         }
     }
 

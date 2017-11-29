@@ -65,7 +65,9 @@ import java.util.concurrent.TimeUnit;
      * @param request The request to be handled.
      */
     private void handleCreateGameRoomRequest(CreateGameRoomRequest request) {
-        final CreateGameRoomMessage msg = CreateGameRoomMessage.getMessage(request.getGameRoomName());
+        final String gameRoomName = request.getGameRoomName();
+        final int capacity = request.getCapacity();
+        final CreateGameRoomMessage msg = CreateGameRoomMessage.getMessage(gameRoomName, capacity);
         final GameRoomCreationResult result = askTheGameRoomManagerToCreateAGameRoom(msg, request.getTimeout());
         reportSender(result);
     }

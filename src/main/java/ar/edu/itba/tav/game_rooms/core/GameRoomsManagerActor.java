@@ -3,15 +3,14 @@ package ar.edu.itba.tav.game_rooms.core;
 import akka.actor.*;
 import akka.japi.pf.ReceiveBuilder;
 import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.*;
+import ar.edu.itba.tav.game_rooms.utils.AggregatorActor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import scala.compat.java8.ScalaStreamSupport;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.util.*;
-import java.util.stream.Collectors;
 
 
 /**
@@ -30,6 +29,12 @@ public class GameRoomsManagerActor extends AbstractActor {
     private static final String UTF8_ENCODING = "UTF-8";
 
     /**
+     * A {@link Set} containing those {@link ActorRef} that represent game room {@link Actor},
+     * children of this game room manager.
+     */
+    private final List<ActorRef> gameRoomActors;
+
+    /**
      * A {@link Map} of {@link ActorRef} holding as keys those actors whose termination process was triggered.
      * This set allows this {@link Actor} to know which children started their termination process,
      * in order to handle their post termination process (i.e execution of {@link #removeGameRoom(ActorRef)}).
@@ -41,14 +46,15 @@ public class GameRoomsManagerActor extends AbstractActor {
      * Private constructor.
      */
     private GameRoomsManagerActor() {
-        terminatedActors = new HashMap<>();
+        this.gameRoomActors = new LinkedList<>();
+        this.terminatedActors = new HashMap<>();
     }
 
     @Override
     public Receive createReceive() {
         return ReceiveBuilder.create()
                 .match(GetAllGameRoomsMessage.class, msg -> this.getAllGameRooms())
-                .match(CreateGameRoomMessage.class, msg -> this.startGameRoom(msg.getGameRoomName()))
+                .match(CreateGameRoomMessage.class, this::startGameRoom)
                 .match(RemoveGameRoomMessage.class, msg -> this.stopGameRoom(msg.getGameRoomName()))
                 .match(Terminated.class,
                         terminated -> this.terminatedActors.containsKey(terminated.getActor()),
@@ -60,37 +66,38 @@ public class GameRoomsManagerActor extends AbstractActor {
      * Replies with all the existing game rooms (i.e the children name).
      */
     private void getAllGameRooms() {
-        final ActorRef requester = this.getSender();
-        final List<String> gameRooms = ScalaStreamSupport.stream(this.context().children())
-                .map(ActorRef::path)
-                .map(ActorPath::name)
-                .map(name -> {
-                    try {
-                        return URLDecoder.decode(name, UTF8_ENCODING);
-                    } catch (UnsupportedEncodingException e) {
-                        // This can't happen, but we must catch this exception.
-                        LOGGER.error("Some unexpected thing happened. Exception message: {}", e.getMessage());
-                        LOGGER.debug("Stacktrace: ", e);
-                        throw new RuntimeException("Could not url decode game room name", e);
-                    }
-                })
-                .collect(Collectors.toList());
-        requester.tell(gameRooms, this.getSelf());
+        final GetGameRoomDataMessage request = GetGameRoomDataMessage.getMessage();
+        final ActorRef respondTo = this.getContext()
+                .actorOf(GetAllGameRoomsResponseHandler.getProps(this.getSelf(), this.getSender()));
+        final long timeout = 2000;
+        this.getContext()
+                .actorOf(AggregatorActor.props(GameRoomDataMessage.class, request, gameRoomActors, respondTo, timeout));
     }
 
     /**
      * Starts a new game room with the given {@code gameRoomName} (i.e starts a new {@link GameRoomActor}).
      *
-     * @param gameRoomName The name for the new game room.
+     * @param message the {@link CreateGameRoomMessage} containing data for game room creation.
      */
-    private void startGameRoom(String gameRoomName) {
-        Objects.requireNonNull(gameRoomName, "The gameRoomName must not be null!");
+    private void startGameRoom(CreateGameRoomMessage message) {
+        Objects.requireNonNull(message, "The message must not be null!");
+
+        final String gameRoomName = message.getGameRoomName();
+        final int capacity = message.getCapacity();
+
         final ActorRef requester = this.getSender();
         try {
             LOGGER.debug("Trying to create a new game room with name {}", gameRoomName);
             final String urlEncodedName = URLEncoder.encode(gameRoomName, UTF8_ENCODING);
-            final ActorRef actorRef = this.getContext().actorOf(GameRoomActor.props(gameRoomName), urlEncodedName);
-            this.getContext().watch(actorRef);  // Monitor child life
+            try {
+                final ActorRef actorRef = this.getContext()
+                        .actorOf(GameRoomActor.props(gameRoomName, capacity), urlEncodedName);
+                this.getContext().watch(actorRef);  // Monitor child life
+                this.gameRoomActors.add(actorRef);
+            } catch (IllegalArgumentException e) {
+                reportToActor(requester, GameRoomCreationResult.INVALID);
+                return;
+            }
             LOGGER.debug("Game room with name \"{}\" successfully created. Name is url encoded as \"{}\"",
                     gameRoomName, urlEncodedName);
         } catch (UnsupportedEncodingException e) {
@@ -128,6 +135,7 @@ public class GameRoomsManagerActor extends AbstractActor {
             }
             final ActorRef actorRef = actorRefOptional.get();
             this.getContext().stop(actorRef);
+            this.gameRoomActors.remove(actorRef);
             this.terminatedActors.put(actorRef, requester);
         } catch (UnsupportedEncodingException e) {
             LOGGER.error("Some unexpected thing happened. Exception message: {}", e.getMessage());
@@ -180,5 +188,83 @@ public class GameRoomsManagerActor extends AbstractActor {
         return Props.create(GameRoomsManagerActor.class, GameRoomsManagerActor::new);
     }
 
+    /**
+     * Inner {@link akka.actor.Actor} in charge of handling a get all game rooms aggregation response.
+     */
+    private static final class GetAllGameRoomsResponseHandler extends AbstractActor {
 
+        /**
+         * {@link ActorRef} who must send the response.
+         */
+        private final ActorRef from;
+        /**
+         * {@link ActorRef} who must receive the response.
+         */
+        private final ActorRef respondTo;
+
+        /**
+         * Private constructor.
+         *
+         * @param from      {@link ActorRef} who must send the response.
+         * @param respondTo {@link ActorRef} who must receive the response.
+         */
+        private GetAllGameRoomsResponseHandler(ActorRef from, ActorRef respondTo) {
+            this.from = from;
+            this.respondTo = respondTo;
+        }
+
+        @Override
+        public Receive createReceive() {
+            return ReceiveBuilder.create()
+                    .match(AggregatorActor.SuccessfulResultMessage.class, this::handleSuccessfulResponse)
+                    .match(AggregatorActor.TimeoutMessage.class, msg -> this.handleTimeout())
+                    .match(AggregatorActor.FailMessage.class, this::handleFailure)
+                    .build();
+        }
+
+        /**
+         * Handles the successful aggregation response message.
+         *
+         * @param msg The {@link AggregatorActor.SuccessfulResultMessage}
+         *            containing the aggregation result.
+         */
+        private void handleSuccessfulResponse(AggregatorActor.SuccessfulResultMessage<GameRoomDataMessage> msg) {
+            respondTo.tell(new LinkedList<>(msg.getResult().values()), from);
+        }
+
+        /**
+         * Handles aggregation process timeout (i.e do nothing, and expect the requester eventually timeouts by itself).
+         */
+        private void handleTimeout() {
+            terminate();
+            // Do nothing, as if there is a timeout, the requester will eventually timeout by itself
+        }
+
+        /**
+         * Handles aggregation process failure (i.e TODO: complete)
+         *
+         * @param msg The {@link ar.edu.itba.tav.game_rooms.utils.AggregatorActor.FailMessage}
+         *            containing the {@link Throwable} that caused the failure.
+         */
+        private void handleFailure(AggregatorActor.FailMessage msg) {
+            // TODO: define what do we do here...
+            terminate();
+        }
+
+        private void terminate() {
+            this.getContext().stop(this.getSelf());
+        }
+
+        /**
+         * Create {@link Props} for an {@link akka.actor.Actor} of this type.
+         *
+         * @param from      {@link ActorRef} who must send the response.
+         * @param respondTo {@link ActorRef} who must receive the response.
+         * @return The created {@link Props}.
+         */
+        private static Props getProps(ActorRef from, ActorRef respondTo) {
+            return Props.create(GetAllGameRoomsResponseHandler.class,
+                    () -> new GetAllGameRoomsResponseHandler(from, respondTo));
+        }
+    }
 }

@@ -8,10 +8,7 @@ import akka.http.javadsl.ConnectHttp;
 import akka.http.javadsl.Http;
 import akka.http.javadsl.ServerBinding;
 import akka.http.javadsl.marshallers.jackson.Jackson;
-import akka.http.javadsl.model.HttpRequest;
-import akka.http.javadsl.model.HttpResponse;
-import akka.http.javadsl.model.RequestEntity;
-import akka.http.javadsl.model.StatusCodes;
+import akka.http.javadsl.model.*;
 import akka.http.javadsl.model.headers.Location;
 import akka.http.javadsl.server.*;
 import akka.pattern.Patterns;
@@ -20,6 +17,7 @@ import akka.stream.javadsl.Flow;
 import akka.util.Timeout;
 import ar.edu.itba.tav.game_rooms.http.dto.GameRoomDto;
 import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.GameRoomCreationResult;
+import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.GameRoomDataMessage;
 import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.GameRoomRemovalResult;
 import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.CreateGameRoomRequest;
 import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.GetAllGameRoomsRequest;
@@ -255,9 +253,12 @@ public class HttpServer extends AllDirectives {
         final long timeout = 5000;
         GetAllGameRoomsRequest request = GetAllGameRoomsRequest.createRequest(timeout);
         try {
-            final List<String> gameRoomNames = askToARequestHandlerActor(request, timeout);
-            final List<GameRoomDto> gameRooms = gameRoomNames.stream()
-                    .map(name -> new GameRoomDto(name, context.getRequest().getUri().addPathSegment(name)))
+            final List<GameRoomDataMessage> gameRoomsData = askToARequestHandlerActor(request, timeout);
+            final List<GameRoomDto> gameRooms = gameRoomsData.stream()
+                    .map(game -> {
+                        final Uri locationUri = context.getRequest().getUri().addPathSegment(game.getName());
+                        return new GameRoomDto(game.getName(), game.getCapacity(), locationUri);
+                    })
                     .collect(Collectors.toList());
             final CompletionStage<RequestEntity> marshalled =
                     new MarshalUnmarshal(actorSystem.dispatcher(), materializer)
@@ -284,7 +285,8 @@ public class HttpServer extends AllDirectives {
     private HttpResponse createGameRoomResponse(RequestContext context, GameRoomDto gameRoomDto) {
         final long timeout = 2000;
         final String gameRoomName = gameRoomDto.getName();
-        CreateGameRoomRequest request = CreateGameRoomRequest.createRequest(gameRoomName, timeout);
+        final int capacity = gameRoomDto.getCapacity();
+        CreateGameRoomRequest request = CreateGameRoomRequest.createRequest(gameRoomName, capacity, timeout);
         try {
             switch ((GameRoomCreationResult) askToARequestHandlerActor(request, timeout)) {
                 case CREATED:
@@ -293,6 +295,8 @@ public class HttpServer extends AllDirectives {
                             .addHeader(Location.create(context.getRequest().getUri().addPathSegment(gameRoomName)));
                 case NAME_REPEATED:
                     return HttpResponse.create().withStatus(StatusCodes.CONFLICT);
+                case INVALID:
+                    return HttpResponse.create().withStatus(StatusCodes.UNPROCESSABLE_ENTITY);
                 case FAILURE:
                     return HttpResponse.create().withStatus(StatusCodes.INTERNAL_SERVER_ERROR);
             }
