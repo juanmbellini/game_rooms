@@ -2,9 +2,9 @@ package ar.edu.itba.tav.game_rooms.core;
 
 import akka.actor.*;
 import akka.japi.pf.ReceiveBuilder;
+import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import scala.collection.immutable.Stream;
 import scala.compat.java8.ScalaStreamSupport;
 
 import java.io.UnsupportedEncodingException;
@@ -13,7 +13,6 @@ import java.net.URLEncoder;
 import java.util.*;
 import java.util.stream.Collectors;
 
-//import ar.edu.itba.tav.game_rooms.exceptions.NoSuchGameRoomException;
 
 /**
  * {@link akka.actor.Actor} in charge of managing game rooms.
@@ -97,14 +96,14 @@ public class GameRoomsManagerActor extends AbstractActor {
         } catch (UnsupportedEncodingException e) {
             LOGGER.error("Some unexpected thing happened. Exception message: {}", e.getMessage());
             LOGGER.debug("Stacktrace: ", e);
-            reportGameRoomCreationFailure(requester);
+            reportToActor(requester, GameRoomCreationResult.FAILURE);
             throw new RuntimeException("Could not url encode game room name", e);
         } catch (InvalidActorNameException e) {
             LOGGER.debug("Name \"{}\" is invalid, or already used", gameRoomName);
-            reportGameRoomNameRepeated(requester);
+            reportToActor(requester, GameRoomCreationResult.NAME_REPEATED);
             return;
         }
-        reportGameRoomCreationSuccessToSender(requester);
+        reportToActor(requester, GameRoomCreationResult.CREATED);
     }
 
     /**
@@ -124,7 +123,7 @@ public class GameRoomsManagerActor extends AbstractActor {
 
             if (!actorRefOptional.isPresent()) {
                 LOGGER.debug("No game room with name \"{}\"", gameRoomName);
-                reportGameRoomNotExists(requester);
+                reportToActor(requester, GameRoomRemovalResult.NO_SUCH_GAME_ROOM);
                 return;
             }
             final ActorRef actorRef = actorRefOptional.get();
@@ -133,7 +132,7 @@ public class GameRoomsManagerActor extends AbstractActor {
         } catch (UnsupportedEncodingException e) {
             LOGGER.error("Some unexpected thing happened. Exception message: {}", e.getMessage());
             LOGGER.debug("Stacktrace: ", e);
-            reportGameRoomRemovalFailure(requester);
+            reportToActor(requester, GameRoomRemovalResult.FAILURE);
             throw new RuntimeException("Could not url encode game room name", e);
         }
     }
@@ -150,58 +149,17 @@ public class GameRoomsManagerActor extends AbstractActor {
             final String gameRoomName = URLDecoder.decode(terminatedActorRef.path().name(), UTF8_ENCODING);
             LOGGER.debug("Successfully stopped game with name \"{}\"", gameRoomName);
             LOGGER.debug("Name \"{}\" is again available for a game room", gameRoomName);
-            reportGameRoomRemovalSuccess(requester);
+            reportToActor(requester, GameRoomRemovalResult.REMOVED);
         } catch (UnsupportedEncodingException e) {
             LOGGER.error("Some unexpected thing happened. Exception message: {}", e.getMessage());
             LOGGER.debug("Stacktrace: ", e);
-            reportGameRoomRemovalFailure(requester);
+            reportToActor(requester, GameRoomRemovalResult.FAILURE);
             throw new RuntimeException("Could not url decode game room name", e);
         }
     }
 
     // TODO: join a game room (game room id + player id?)
 
-    /**
-     * Reports success to the sender (i.e send to it a {@code true} value).
-     */
-    private void reportGameRoomCreationSuccessToSender(ActorRef requester) {
-        reportToActor(requester, GameRoomCreationResult.CREATED);
-    }
-
-    /**
-     * Reports failure to the sender (i.e send to it a {@code false} value).
-     */
-    private void reportGameRoomNameRepeated(ActorRef requester) {
-        reportToActor(requester, GameRoomCreationResult.NAME_REPEATED);
-    }
-
-    /**
-     * Reports failure to the sender (i.e send to it a {@code false} value).
-     */
-    private void reportGameRoomCreationFailure(ActorRef requester) {
-        reportToActor(requester, GameRoomCreationResult.FAILURE);
-    }
-
-    /**
-     * Reports success to the sender (i.e send to it a {@code true} value).
-     */
-    private void reportGameRoomRemovalSuccess(ActorRef requester) {
-        reportToActor(requester, GameRoomRemovalResult.REMOVED);
-    }
-
-    /**
-     * Reports success to the sender (i.e send to it a {@code true} value).
-     */
-    private void reportGameRoomNotExists(ActorRef requester) {
-        reportToActor(requester, GameRoomRemovalResult.NO_SUCH_GAME_ROOM);
-    }
-
-    /**
-     * Reports success to the sender (i.e send to it a {@code true} value).
-     */
-    private void reportGameRoomRemovalFailure(ActorRef requester) {
-        reportToActor(requester, GameRoomRemovalResult.FAILURE);
-    }
 
     /**
      * Replies the given {@link ActorRef} with the given {@code result} value.
@@ -223,144 +181,4 @@ public class GameRoomsManagerActor extends AbstractActor {
     }
 
 
-    /**
-     * A {@link GameRoomMessage} that is used to create a new game room.
-     */
-    public final static class GetAllGameRoomsMessage {
-
-        /**
-         * Private constructor.
-         */
-        private GetAllGameRoomsMessage() {
-        }
-
-        /**
-         * Static method to create a {@link GetAllGameRoomsMessage}.
-         *
-         * @return The new {@link GetAllGameRoomsMessage}.
-         */
-        public static GetAllGameRoomsMessage getMessage() {
-            return new GetAllGameRoomsMessage();
-        }
-    }
-
-    /**
-     * Abstract class representing a game room message (i.e a message that a {@link GameRoomsManagerActor}
-     * can understand in order to operate over a game room.
-     */
-    private abstract static class GameRoomMessage {
-
-        /**
-         * The game room's name in which the operation must be done.
-         */
-        private final String gameRoomName;
-
-        /**
-         * Private constructor.
-         *
-         * @param gameRoomName The game room's name in which the operation must be done.
-         */
-        private GameRoomMessage(String gameRoomName) {
-            this.gameRoomName = gameRoomName;
-        }
-
-        /**
-         * @return The game room's name in which the operation must be done.
-         */
-        /* package */ String getGameRoomName() {
-            return gameRoomName;
-        }
-    }
-
-    /**
-     * A {@link GameRoomMessage} that is used to create a new game room.
-     */
-    public final static class CreateGameRoomMessage extends GameRoomMessage {
-
-        /**
-         * Private constructor.
-         *
-         * @param gameRoomName The name for the new game room.
-         */
-        private CreateGameRoomMessage(String gameRoomName) {
-            super(gameRoomName);
-        }
-
-        /**
-         * Static method to create a {@link CreateGameRoomMessage}.
-         *
-         * @param gameRoomName The name for the new game room.
-         * @return The new {@link CreateGameRoomMessage}.
-         */
-        public static CreateGameRoomMessage getMessage(String gameRoomName) {
-            return new CreateGameRoomMessage(gameRoomName);
-        }
-    }
-
-    /**
-     * A {@link GameRoomMessage} that is used remove game rooms.
-     */
-    public final static class RemoveGameRoomMessage extends GameRoomMessage {
-
-        /**
-         * Private constructor.
-         *
-         * @param gameRoomName The name of the game room to be removed.
-         */
-        private RemoveGameRoomMessage(String gameRoomName) {
-            super(gameRoomName);
-        }
-
-        /**
-         * Static method to create a {@link RemoveGameRoomMessage}.
-         *
-         * @param gameRoomName The name of the game room to be removed.
-         * @return The new {@link RemoveGameRoomMessage}.
-         */
-        public static RemoveGameRoomMessage getMessage(String gameRoomName) {
-            return new RemoveGameRoomMessage(gameRoomName);
-        }
-    }
-
-    /**
-     * Marking interface for enums that can be returned as responses to senders.
-     */
-    private interface ResultEnum {
-    }
-
-    /**
-     * Enum containing the possible values to be replied to the sender when creating a new game room.
-     */
-    public enum GameRoomCreationResult implements ResultEnum {
-        /**
-         * The game room was created successfully.
-         */
-        CREATED,
-        /**
-         * There is another game room with the given name.
-         */
-        NAME_REPEATED,
-        /**
-         * There was an unexpected failure when trying to create the game room.
-         */
-        FAILURE,
-    }
-
-    /**
-     * Enum containing the possible values to be replied to the sender when creating a new game room.
-     */
-    public enum GameRoomRemovalResult implements ResultEnum {
-        /**
-         * The game room was removed successfully.
-         */
-        REMOVED,
-        /**
-         * There is no game room with the given name.
-         */
-        NO_SUCH_GAME_ROOM,
-        /**
-         * There was an unexpected failure when trying to create the game room.
-         */
-        FAILURE,
-    }
 }

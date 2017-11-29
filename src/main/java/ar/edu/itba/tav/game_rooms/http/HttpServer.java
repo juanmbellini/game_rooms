@@ -18,8 +18,12 @@ import akka.pattern.Patterns;
 import akka.stream.ActorMaterializer;
 import akka.stream.javadsl.Flow;
 import akka.util.Timeout;
-import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor;
 import ar.edu.itba.tav.game_rooms.http.dto.GameRoomDto;
+import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.GameRoomCreationResult;
+import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.GameRoomRemovalResult;
+import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.CreateGameRoomRequest;
+import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.GetAllGameRoomsRequest;
+import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.RemoveGameRoomRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.squbs.marshallers.MarshalUnmarshal;
@@ -186,8 +190,8 @@ public class HttpServer extends AllDirectives {
 
     /**
      * {@link Route} {@link Supplier} for a get all game rooms request.
-     * Handles the request by communicating with a {@link RequestHandlerActor},
-     * sending a {@link RequestHandlerActor.GetAllGameRoomsRequest} message to it.
+     * Handles the request by communicating with a {@link HttpRequestHandlerActor},
+     * sending a {@link GetAllGameRoomsRequest} message to it.
      *
      * @return The {@link Route} {@link Supplier}.
      */
@@ -203,8 +207,8 @@ public class HttpServer extends AllDirectives {
 
     /**
      * {@link Route} {@link Supplier} for a create game room request.
-     * Handles the request by communicating with a {@link RequestHandlerActor},
-     * sending a {@link RequestHandlerActor.CreateGameRoomRequest} message to it,
+     * Handles the request by communicating with a {@link HttpRequestHandlerActor},
+     * sending a {@link CreateGameRoomRequest} message to it,
      * getting the game room name from the received json.
      *
      * @return The {@link Route} {@link Supplier}.
@@ -222,8 +226,8 @@ public class HttpServer extends AllDirectives {
 
     /**
      * {@link Route} {@link Function} for a remove game room request, taking a string as an input argument.
-     * Handles the request by communicating with a {@link RequestHandlerActor},
-     * sending a {@link RequestHandlerActor.RemoveGameRoomRequest} message to it,
+     * Handles the request by communicating with a {@link HttpRequestHandlerActor},
+     * sending a {@link RemoveGameRoomRequest} message to it,
      * getting the game room name from the input argument.
      *
      * @return The {@link Function} that creates a {@link Route}.
@@ -249,8 +253,7 @@ public class HttpServer extends AllDirectives {
      */
     private HttpResponse getAllGameRoomsResponse(RequestContext context) {
         final long timeout = 5000;
-        RequestHandlerActor.GetAllGameRoomsRequest request =
-                RequestHandlerActor.GetAllGameRoomsRequest.createRequest(timeout);
+        GetAllGameRoomsRequest request = GetAllGameRoomsRequest.createRequest(timeout);
         try {
             final List<String> gameRoomNames = askToARequestHandlerActor(request, timeout);
             final List<GameRoomDto> gameRooms = gameRoomNames.stream()
@@ -281,10 +284,9 @@ public class HttpServer extends AllDirectives {
     private HttpResponse createGameRoomResponse(RequestContext context, GameRoomDto gameRoomDto) {
         final long timeout = 2000;
         final String gameRoomName = gameRoomDto.getName();
-        RequestHandlerActor.CreateGameRoomRequest request =
-                RequestHandlerActor.CreateGameRoomRequest.createRequest(gameRoomName, timeout);
+        CreateGameRoomRequest request = CreateGameRoomRequest.createRequest(gameRoomName, timeout);
         try {
-            switch ((GameRoomsManagerActor.GameRoomCreationResult) askToARequestHandlerActor(request, timeout)) {
+            switch ((GameRoomCreationResult) askToARequestHandlerActor(request, timeout)) {
                 case CREATED:
                     return HttpResponse.create()
                             .withStatus(StatusCodes.CREATED)
@@ -311,10 +313,9 @@ public class HttpServer extends AllDirectives {
      */
     private HttpResponse removeGameRoomResponse(String gameRoomName) {
         final long timeout = 5000;
-        RequestHandlerActor.RemoveGameRoomRequest request =
-                RequestHandlerActor.RemoveGameRoomRequest.createRequest(gameRoomName, timeout);
+        RemoveGameRoomRequest request = RemoveGameRoomRequest.createRequest(gameRoomName, timeout);
         try {
-            switch ((GameRoomsManagerActor.GameRoomRemovalResult) askToARequestHandlerActor(request, timeout)) {
+            switch ((GameRoomRemovalResult) askToARequestHandlerActor(request, timeout)) {
                 case NO_SUCH_GAME_ROOM:
                 case REMOVED:
                     return HttpResponse.create().withStatus(StatusCodes.NO_CONTENT);
@@ -335,7 +336,7 @@ public class HttpServer extends AllDirectives {
     // ========================================================
 
     /**
-     * Passes the given {@code question} to a new {@link RequestHandlerActor}.
+     * Passes the given {@code question} to a new {@link HttpRequestHandlerActor}.
      * If the request is longer than the given {@code timeout}, an Exception is thrown.
      *
      * @param question The request to be sent.
@@ -344,7 +345,7 @@ public class HttpServer extends AllDirectives {
      * @throws Exception If anything goes wrong.
      */
     private <T> T askToARequestHandlerActor(Object question, long timeout) throws Exception {
-        final ActorRef handlerActor = actorSystem.actorOf(RequestHandlerActor.getProps(gameRoomsManagerPath));
+        final ActorRef handlerActor = actorSystem.actorOf(HttpRequestHandlerActor.getProps(gameRoomsManagerPath));
         final FiniteDuration duration = Duration.create(timeout, TimeUnit.MILLISECONDS);
         final Future<?> future = Patterns.ask(handlerActor, question, new Timeout(duration));
 
