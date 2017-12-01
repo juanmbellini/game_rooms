@@ -1,6 +1,8 @@
 package ar.edu.itba.tav.game_rooms.http;
 
-import akka.actor.*;
+import akka.actor.AbstractActor;
+import akka.actor.ActorRef;
+import akka.actor.Props;
 import akka.japi.pf.ReceiveBuilder;
 import akka.pattern.Patterns;
 import akka.util.Timeout;
@@ -23,9 +25,9 @@ import java.util.concurrent.TimeUnit;
 /* package */ class HttpRequestHandlerActor extends AbstractActor {
 
     /**
-     * The path of the game room manager.
+     * The {@link ActorRef} for the game room manager.
      */
-    private final ActorPath gameRoomManagerPath;
+    private final ActorRef gameRoomManager;
 
     /**
      * The {@link ActorRef} for the system monitor.
@@ -35,11 +37,11 @@ import java.util.concurrent.TimeUnit;
     /**
      * Private constructor.
      *
-     * @param gameRoomManagerPath The path of the game room manager.
-     * @param systemMonitor       The {@link ActorRef} for the system monitor.
+     * @param gameRoomManager The {@link ActorRef} for the game room manager.
+     * @param systemMonitor   The {@link ActorRef} for the system monitor.ø
      */
-    private HttpRequestHandlerActor(ActorPath gameRoomManagerPath, ActorRef systemMonitor) {
-        this.gameRoomManagerPath = gameRoomManagerPath;
+    private HttpRequestHandlerActor(ActorRef gameRoomManager, ActorRef systemMonitor) {
+        this.gameRoomManager = gameRoomManager;
         this.systemMonitor = systemMonitor;
     }
 
@@ -166,7 +168,6 @@ import java.util.concurrent.TimeUnit;
      * @return The response of the question.
      */
     private <T> T askTheGameRoomManager(Object question, long timeout, T defaultValue) {
-        final ActorSelection gameRoomManager = getContext().getSystem().actorSelection(gameRoomManagerPath);
         final FiniteDuration duration = Duration.create(timeout, TimeUnit.MILLISECONDS);
         Future<Object> future = Patterns.ask(gameRoomManager, question, new Timeout(duration));
         try {
@@ -189,13 +190,14 @@ import java.util.concurrent.TimeUnit;
     /**
      * Create {@link Props} for an {@link akka.actor.Actor} of this type.
      *
-     * @param gameRoomManagerPath The path of the game room manager.
-     * @param systemMonitor       The {@link ActorRef} for the system monitor.
+     * @param gameRoomManager The {@link ActorRef} for the game room manager.
+     * @param systemMonitor   The {@link ActorRef} for the system monitor.
      * @return The created {@link Props}.
      */
     /* package */
-    static Props getProps(ActorPath gameRoomManagerPath, ActorRef systemMonitor) {
-        return Props.create(HttpRequestHandlerActor.class, () -> new HttpRequestHandlerActor(gameRoomManagerPath, systemMonitor));
+    static Props getProps(ActorRef gameRoomManager, ActorRef systemMonitor) {
+        return Props.create(HttpRequestHandlerActor.class,
+                () -> new HttpRequestHandlerActor(gameRoomManager, systemMonitor));
     }
 
 }

@@ -1,7 +1,6 @@
 package ar.edu.itba.tav.game_rooms.http;
 
 import akka.NotUsed;
-import akka.actor.ActorPath;
 import akka.actor.ActorRef;
 import akka.actor.ActorSystem;
 import akka.http.javadsl.ConnectHttp;
@@ -79,11 +78,6 @@ public class HttpServer extends AllDirectives {
     private final ActorSystem actorSystem;
 
     /**
-     * The {@link ActorPath} for the games room manager {@link akka.actor.Actor}.
-     */
-    private final ActorPath gameRoomsManagerPath;
-
-    /**
      * An {@link ActorRef} to the game rooms manager.
      */
     private final ActorRef gameRoomManager;
@@ -103,7 +97,6 @@ public class HttpServer extends AllDirectives {
      */
     private HttpServer(ActorSystem system, ActorRef gameRoomManager, ActorRef systemMonitor) {
         this.actorSystem = system;
-        this.gameRoomsManagerPath = gameRoomManager.path();
         this.gameRoomManager = gameRoomManager;
         this.systemMonitor = systemMonitor;
         this.binding = null;
@@ -580,7 +573,7 @@ public class HttpServer extends AllDirectives {
      */
     private <T> T askToARequestHandlerActor(Object question, long timeout) throws Exception {
         final ActorRef handlerActor = actorSystem
-                .actorOf(HttpRequestHandlerActor.getProps(gameRoomsManagerPath, systemMonitor));
+                .actorOf(HttpRequestHandlerActor.getProps(gameRoomManager, systemMonitor));
         final FiniteDuration duration = Duration.create(timeout, TimeUnit.MILLISECONDS);
         final Future<?> future = Patterns.ask(handlerActor, question, new Timeout(duration));
 
