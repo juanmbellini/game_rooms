@@ -157,3 +157,38 @@ Removes a given player into a given game room, if it has space.
 * **404 Not Found:** No Game Room with the specified name.
 * **408 Request Timeout:** The request reached the timeout set for it.
 
+
+
+
+## System Monitor
+
+### Model
+
+The system monitor entity has the following fields:
+
+| Field		| Description 	        	|
+|:-----------|:-------------------------|
+| cpuUsage	| CPU usage of the system 	|
+| freeMemory	| Available memory			|
+| jvmMemory	| Memory in use 				|
+| maxMemory	| Total possible memory		|
+
+
+### Get system monitor data
+
+Retrieves the system monitor data.
+
+#### Request URL:
+
+**GET /monitor**
+
+#### Request Headers:
+
+* **Accept: application/json**
+
+
+#### Responses:
+
+* **200 OK:** The request was successfully answered. Data is in the body of the response.
+* **408 Request Timeout:** The request reached the timeout set for it.
+* **502 Service Unavailable:** If the system monitor is shut down.
