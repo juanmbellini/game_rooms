@@ -43,14 +43,23 @@ public class GameRoomsManagerActor extends AbstractActor {
      * in order to handle their post termination process (i.e execution of {@link #removeGameRoom(ActorRef)}).
      * The values are the {@link ActorRef} that requested the shutdown of the game room.
      */
-    private final Map<ActorRef, ActorRef> terminatedActors;
+    private final Map<ActorRef, ActorRef> terminatedActorsAndRequesters;
+
+    /**
+     * A {@link Map} of {@link ActorRef} and {@link String},
+     * holding for each terminated {@link akka.actor.Actor}, their name (i.e the game room name).
+     * This helps the termination process by saving the game room name to be removed from the {@code gameRoomActors},
+     * without having to url decode the {@link Actor} name.
+     */
+    private final Map<ActorRef, String> terminatedActorsAndNames;
 
     /**
      * Private constructor.
      */
     private GameRoomsManagerActor() {
         this.gameRoomActors = new HashMap<>();
-        this.terminatedActors = new HashMap<>();
+        this.terminatedActorsAndRequesters = new HashMap<>();
+        this.terminatedActorsAndNames = new HashMap<>();
     }
 
     @Override
@@ -61,7 +70,7 @@ public class GameRoomsManagerActor extends AbstractActor {
                 .match(CreateGameRoomMessage.class, this::startGameRoom)
                 .match(RemoveGameRoomMessage.class, msg -> this.stopGameRoom(msg.getGameRoomName()))
                 .match(Terminated.class,
-                        terminated -> this.terminatedActors.containsKey(terminated.getActor()),
+                        terminated -> this.terminatedActorsAndRequesters.containsKey(terminated.getActor()),
                         terminated -> this.removeGameRoom(terminated.getActor()))
                 .build();
     }
@@ -147,24 +156,15 @@ public class GameRoomsManagerActor extends AbstractActor {
         Objects.requireNonNull(gameRoomName, "The gameRoomName must not be null!");
         LOGGER.debug("Trying to Stop game room with name \"{}\"", gameRoomName);
         final ActorRef requester = this.getSender();
-        try {
-            final String urlEncodedName = URLEncoder.encode(gameRoomName, UTF8_ENCODING);
-            final Optional<ActorRef> actorRefOptional = this.getContext().findChild(urlEncodedName);
-
-            if (!actorRefOptional.isPresent()) {
-                LOGGER.debug("No game room with name \"{}\"", gameRoomName);
-                reportToActor(requester, GameRoomRemovalResult.NO_SUCH_GAME_ROOM);
-                return;
-            }
-            final ActorRef actorRef = actorRefOptional.get();
-            this.getContext().stop(actorRef);
-            this.terminatedActors.put(actorRef, requester);
-        } catch (UnsupportedEncodingException e) {
-            LOGGER.error("Some unexpected thing happened. Exception message: {}", e.getMessage());
-            LOGGER.debug("Stacktrace: ", e);
-            reportToActor(requester, GameRoomRemovalResult.FAILURE);
-            throw new RuntimeException("Could not url encode game room name", e);
+        final ActorRef child = gameRoomActors.get(gameRoomName);
+        if (child == null) {
+            LOGGER.debug("No game room with name \"{}\"", gameRoomName);
+            reportToActor(requester, GameRoomRemovalResult.NO_SUCH_GAME_ROOM);
+            return;
         }
+        this.getContext().stop(child);
+        this.terminatedActorsAndRequesters.put(child, requester);
+        this.terminatedActorsAndNames.put(child, gameRoomName);
     }
 
     /**
@@ -174,19 +174,16 @@ public class GameRoomsManagerActor extends AbstractActor {
      */
     private void removeGameRoom(ActorRef terminatedActorRef) {
         Objects.requireNonNull(terminatedActorRef, "The terminatedActorRef must not be null!");
-        final ActorRef requester = terminatedActors.get(terminatedActorRef);
-        try {
-            final String gameRoomName = URLDecoder.decode(terminatedActorRef.path().name(), UTF8_ENCODING);
-            LOGGER.debug("Successfully stopped game with name \"{}\"", gameRoomName);
-            LOGGER.debug("Name \"{}\" is again available for a game room", gameRoomName);
-            gameRoomActors.remove(gameRoomName);
-            reportToActor(requester, GameRoomRemovalResult.REMOVED);
-        } catch (UnsupportedEncodingException e) {
-            LOGGER.error("Some unexpected thing happened. Exception message: {}", e.getMessage());
-            LOGGER.debug("Stacktrace: ", e);
+        final ActorRef requester = terminatedActorsAndRequesters.remove(terminatedActorRef);
+        final String gameRoomName = this.terminatedActorsAndNames.remove(terminatedActorRef);
+        if (requester == null || gameRoomName == null) {
             reportToActor(requester, GameRoomRemovalResult.FAILURE);
-            throw new RuntimeException("Could not url decode game room name", e);
+            throw new IllegalStateException("Some unexpected thing happened");
         }
+        gameRoomActors.remove(gameRoomName);
+        reportToActor(requester, GameRoomRemovalResult.REMOVED);
+        LOGGER.debug("Successfully stopped game with name \"{}\"", gameRoomName);
+        LOGGER.debug("Name \"{}\" is again available for a game room", gameRoomName);
     }
 
     // TODO: join a game room (game room id + player id?)
