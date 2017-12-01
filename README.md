@@ -58,10 +58,10 @@ The system can be run executing the built jar. Run the following command in the 
 ```
 $ java -jar <path-to-jar>
 ```
-If nothing was changed in the ```pom.xml``` file, and the output directory is the default, the path to the jar will be ```<PROJECT-ROOT>/target/game-rooms-1.0-SNAPSHOT.jar```, so the way to run the system is:
+If nothing was changed in the ```pom.xml``` file, and the output directory is the default, the path to the jar will be ```<PROJECT-ROOT>/target/game-rooms-1.0.0.RELEASE.jar```, so the way to run the system is:
 
 ```
-$ java -jar <PROJECT-ROOT>/target/game-rooms-1.0-SNAPSHOT.jar
+$ java -jar <PROJECT-ROOT>/target/game-rooms-1.0.0.RELEASE.jar
 ```
 You can customize the execution of the system including some options. The following sections will explain them.
 
@@ -70,7 +70,7 @@ You can customize the execution of the system including some options. The follow
 To print the usage message, include the ```-h``` or ```--help``` options. For example:
 
 ```
-$ java -jar <PROJECT-ROOT>/target/game-rooms-1.0-SNAPSHOT.jar --help
+$ java -jar <PROJECT-ROOT>/target/game-rooms-1.0.0.RELEASE.jar --help
 ```
 
 ### Selecting the http server hostname
@@ -80,7 +80,7 @@ You can use an IP or a name (for instance, ```localhost```).
 For example:
 
 ```
-$ java -jar <PROJECT-ROOT>/target/game-rooms-1.0-SNAPSHOT.jar -H 192.168.1.10
+$ java -jar <PROJECT-ROOT>/target/game-rooms-1.0.0.RELEASE.jar -H 192.168.1.10
 ```
 The default value is ```localhost```.
 
@@ -91,7 +91,7 @@ You can set it to ```0``` to let the operating system choose for you.
 For example
 
 ```
-$ java -jar <PROJECT-ROOT>/target/game-rooms-1.0-SNAPSHOT.jar -H 192.168.1.10 -p 8000
+$ java -jar <PROJECT-ROOT>/target/game-rooms-1.0.0.RELEASE.jar -H 192.168.1.10 -p 8000
 ```
 The default value is ```9000```.
 
