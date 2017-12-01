@@ -267,4 +267,30 @@ public class HttpRequestMessages {
             return new RemovePlayerFromGameRoomRequest(gameRoomName, playerId, timeout);
         }
     }
+
+
+    /**
+     * A request for getting system monitor's data.
+     * Message to be sent to the system monitor to request data from it.
+     */
+    public final static class GetSystemMonitorDataRequest extends TimeoutRequest {
+
+
+        /**
+         * Private constructor.
+         *
+         * @param timeout The timeout for the request.s
+         */
+        private GetSystemMonitorDataRequest(long timeout) {
+            super(timeout);
+        }
+
+        /**
+         * @param timeout The timeout for the request.s
+         * @return The singleton for this class.
+         */
+        public static GetSystemMonitorDataRequest getMessage(long timeout) {
+            return new GetSystemMonitorDataRequest(timeout);
+        }
+    }
 }

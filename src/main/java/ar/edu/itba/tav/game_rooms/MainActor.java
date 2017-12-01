@@ -4,6 +4,7 @@ import akka.actor.*;
 import akka.japi.pf.DeciderBuilder;
 import akka.japi.pf.ReceiveBuilder;
 import ar.edu.itba.tav.game_rooms.core.GameRoomsManagerActor;
+import ar.edu.itba.tav.game_rooms.core.SystemMonitorActor;
 import ar.edu.itba.tav.game_rooms.http.HttpServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,11 +46,14 @@ public class MainActor extends AbstractActor {
      */
     private void startSystem(StartSystemMessage message) {
         // Create game manager actor
-        final ActorRef gameRoomsManagerRef = getContext()
+        final ActorRef gameRoomsManager = getContext()
                 .actorOf(GameRoomsManagerActor.getProps(), "game_rooms_manager");
 
+        // Create a system monitor (will start alone)
+        final ActorRef systemMonitor = getContext().actorOf(SystemMonitorActor.getProps(), "system_monitor");
+
         // Start http server
-        HttpServer.createServer(getContext().getSystem(), gameRoomsManagerRef)
+        HttpServer.createServer(getContext().getSystem(), gameRoomsManager, systemMonitor)
                 .start(message.getHttpServerHostname(), message.getHttpServerPort());
 
         this.started = true;
@@ -138,10 +142,14 @@ public class MainActor extends AbstractActor {
          */
         private MainActorSupervisionStrategy() {
             super(false,
-                    DeciderBuilder.match(Throwable.class, e -> {
-                        LOGGER.warn("An actor has been stopped because it throw an exception");
-                        return stop();
-                    }).build());
+                    DeciderBuilder
+                            // Restart in case of a system monitor exception
+                            .match(SystemMonitorActor.SystemMonitorException.class, e -> restart())
+                            // Any other exception must stop the system
+                            .match(Throwable.class, e -> {
+                                LOGGER.warn("An actor has been stopped because it throw an exception");
+                                return stop();
+                            }).build());
         }
 
         /**
