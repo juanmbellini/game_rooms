@@ -95,6 +95,11 @@ $ java -jar <PROJECT-ROOT>/target/game-rooms-1.0-SNAPSHOT.jar -H 192.168.1.10 -p
 ```
 The default value is ```9000```.
 
+
+## REST API
+
+The system exposes a REST API through which you can communicate. Please refer to the ```Endpoints``` file to learn how to operate with it.
+
 ## Author
 
 * [Juan Marcos Bellini](https://github.com/juanmbellini)
