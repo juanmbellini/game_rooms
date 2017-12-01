@@ -109,6 +109,10 @@ public class AggregatorActor<T> extends AbstractActor {
      * Handles the aggregation request.
      */
     private void handleAggregationRequest() {
+        if (this.actors.isEmpty()) {
+            terminateSuccessful();
+            return;
+        }
         // Send the request to each actor
         this.actors.forEach(actorRef -> actorRef.tell(this.request, this.getSelf()));
         this.timeoutTask = this.getContext().getSystem()
