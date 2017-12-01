@@ -31,6 +31,9 @@ public class HttpRequestMessages {
         }
     }
 
+    /**
+     * A request to get all game rooms.
+     */
     public static class GetAllGameRoomsRequest extends TimeoutRequest {
 
         /**
@@ -78,6 +81,33 @@ public class HttpRequestMessages {
          */
         public String getGameRoomName() {
             return gameRoomName;
+        }
+    }
+
+    /**
+     * A request for to get a specific game room.
+     */
+    public static final class GetGameRoomRequest extends GameRoomOperationRequest {
+
+        /**
+         * Private constructor.
+         *
+         * @param gameRoomName The name of the game room to be retrieved.
+         * @param timeout      The timeout for the request.
+         */
+        private GetGameRoomRequest(String gameRoomName, long timeout) {
+            super(gameRoomName, timeout);
+        }
+
+        /**
+         * Creates a new {@link GetGameRoomRequest}.
+         *
+         * @param gameRoomName The name of the game room to be retrieved.
+         * @param timeout      The timeout for the request.
+         * @return The created request.
+         */
+        public static GetGameRoomRequest createRequest(String gameRoomName, long timeout) {
+            return new GetGameRoomRequest(gameRoomName, timeout);
         }
     }
 

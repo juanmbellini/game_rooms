@@ -121,7 +121,7 @@ public class GameRoomOperationMessages {
     // ========================================================================
 
     /**
-     * A message that is used to request a game room creation.
+     * A message that is used to request all game rooms.
      */
     public final static class GetAllGameRoomsMessage {
 
@@ -166,6 +166,31 @@ public class GameRoomOperationMessages {
          */
         public String getGameRoomName() {
             return gameRoomName;
+        }
+    }
+
+    /**
+     * A message that is used to request a specific game room.
+     */
+    public final static class GetSpecificGameRoomMessage extends GameRoomMessage {
+
+        /**
+         * Private constructor.
+         *
+         * @param gameRoomName The name of the game room to be fetched.
+         */
+        private GetSpecificGameRoomMessage(String gameRoomName) {
+            super(gameRoomName);
+        }
+
+        /**
+         * Static method to create a {@link GetSpecificGameRoomMessage}.
+         *
+         * @param gameRoomName The name of the game room to be fetched.
+         * @return The new {@link GetSpecificGameRoomMessage}.
+         */
+        public static GetSpecificGameRoomMessage getMessage(String gameRoomName) {
+            return new GetSpecificGameRoomMessage(gameRoomName);
         }
     }
 

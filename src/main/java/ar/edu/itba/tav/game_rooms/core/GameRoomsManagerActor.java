@@ -2,10 +2,13 @@ package ar.edu.itba.tav.game_rooms.core;
 
 import akka.actor.*;
 import akka.japi.pf.ReceiveBuilder;
+import akka.pattern.Patterns;
 import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.*;
 import ar.edu.itba.tav.game_rooms.utils.AggregatorActor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import scala.concurrent.ExecutionContext;
+import scala.concurrent.Future;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLDecoder;
@@ -32,7 +35,7 @@ public class GameRoomsManagerActor extends AbstractActor {
      * A {@link Set} containing those {@link ActorRef} that represent game room {@link Actor},
      * children of this game room manager.
      */
-    private final List<ActorRef> gameRoomActors;
+    private final Map<String, ActorRef> gameRoomActors;
 
     /**
      * A {@link Map} of {@link ActorRef} holding as keys those actors whose termination process was triggered.
@@ -46,7 +49,7 @@ public class GameRoomsManagerActor extends AbstractActor {
      * Private constructor.
      */
     private GameRoomsManagerActor() {
-        this.gameRoomActors = new LinkedList<>();
+        this.gameRoomActors = new HashMap<>();
         this.terminatedActors = new HashMap<>();
     }
 
@@ -54,6 +57,7 @@ public class GameRoomsManagerActor extends AbstractActor {
     public Receive createReceive() {
         return ReceiveBuilder.create()
                 .match(GetAllGameRoomsMessage.class, msg -> this.getAllGameRooms())
+                .match(GetSpecificGameRoomMessage.class, this::getSpecificGameRoom)
                 .match(CreateGameRoomMessage.class, this::startGameRoom)
                 .match(RemoveGameRoomMessage.class, msg -> this.stopGameRoom(msg.getGameRoomName()))
                 .match(Terminated.class,
@@ -69,9 +73,27 @@ public class GameRoomsManagerActor extends AbstractActor {
         final GetGameRoomDataMessage request = GetGameRoomDataMessage.getMessage();
         final ActorRef respondTo = this.getContext()
                 .actorOf(GetAllGameRoomsResponseHandler.getProps(this.getSelf(), this.getSender()));
+        final List<ActorRef> actors = new LinkedList<>(gameRoomActors.values());
         final long timeout = 2000;
         this.getContext()
-                .actorOf(AggregatorActor.props(GameRoomDataMessage.class, request, gameRoomActors, respondTo, timeout));
+                .actorOf(AggregatorActor.props(GameRoomDataMessage.class, request, actors, respondTo, timeout));
+    }
+
+    /**
+     * Replies with the data of the specified game room.
+     *
+     * @param msg The {@link GetSpecificGameRoomMessage} with containing the name of the game room to be retrieved.
+     */
+    private void getSpecificGameRoom(GetSpecificGameRoomMessage msg) {
+        final ActorRef gameRoomActor = gameRoomActors.get(msg.getGameRoomName());
+
+        if (gameRoomActor == null) {
+            this.getSender().tell(Optional.empty(), this.getSelf());
+            return;
+        }
+        final Future<Object> future = Patterns.ask(gameRoomActor, GetGameRoomDataMessage.getMessage(), 100);
+        final ExecutionContext executionContext = getContext().dispatcher();
+        Patterns.pipe(future.map(Optional::ofNullable, executionContext), executionContext).to(getSender());
     }
 
     /**
@@ -86,6 +108,11 @@ public class GameRoomsManagerActor extends AbstractActor {
         final int capacity = message.getCapacity();
 
         final ActorRef requester = this.getSender();
+        if (gameRoomActors.containsKey(gameRoomName)) {
+            LOGGER.debug("Name \"{}\" is invalid, or already used", gameRoomName);
+            reportToActor(requester, GameRoomCreationResult.NAME_REPEATED);
+            return;
+        }
         try {
             LOGGER.debug("Trying to create a new game room with name {}", gameRoomName);
             final String urlEncodedName = URLEncoder.encode(gameRoomName, UTF8_ENCODING);
@@ -93,24 +120,20 @@ public class GameRoomsManagerActor extends AbstractActor {
                 final ActorRef actorRef = this.getContext()
                         .actorOf(GameRoomActor.props(gameRoomName, capacity), urlEncodedName);
                 this.getContext().watch(actorRef);  // Monitor child life
-                this.gameRoomActors.add(actorRef);
+                this.gameRoomActors.put(gameRoomName, actorRef);
             } catch (IllegalArgumentException e) {
                 reportToActor(requester, GameRoomCreationResult.INVALID);
                 return;
             }
+            reportToActor(requester, GameRoomCreationResult.CREATED);
             LOGGER.debug("Game room with name \"{}\" successfully created. Name is url encoded as \"{}\"",
                     gameRoomName, urlEncodedName);
-        } catch (UnsupportedEncodingException e) {
+        } catch (UnsupportedEncodingException | InvalidActorNameException e) {
             LOGGER.error("Some unexpected thing happened. Exception message: {}", e.getMessage());
             LOGGER.debug("Stacktrace: ", e);
             reportToActor(requester, GameRoomCreationResult.FAILURE);
             throw new RuntimeException("Could not url encode game room name", e);
-        } catch (InvalidActorNameException e) {
-            LOGGER.debug("Name \"{}\" is invalid, or already used", gameRoomName);
-            reportToActor(requester, GameRoomCreationResult.NAME_REPEATED);
-            return;
         }
-        reportToActor(requester, GameRoomCreationResult.CREATED);
     }
 
     /**
@@ -135,7 +158,6 @@ public class GameRoomsManagerActor extends AbstractActor {
             }
             final ActorRef actorRef = actorRefOptional.get();
             this.getContext().stop(actorRef);
-            this.gameRoomActors.remove(actorRef);
             this.terminatedActors.put(actorRef, requester);
         } catch (UnsupportedEncodingException e) {
             LOGGER.error("Some unexpected thing happened. Exception message: {}", e.getMessage());
@@ -157,6 +179,7 @@ public class GameRoomsManagerActor extends AbstractActor {
             final String gameRoomName = URLDecoder.decode(terminatedActorRef.path().name(), UTF8_ENCODING);
             LOGGER.debug("Successfully stopped game with name \"{}\"", gameRoomName);
             LOGGER.debug("Name \"{}\" is again available for a game room", gameRoomName);
+            gameRoomActors.remove(gameRoomName);
             reportToActor(requester, GameRoomRemovalResult.REMOVED);
         } catch (UnsupportedEncodingException e) {
             LOGGER.error("Some unexpected thing happened. Exception message: {}", e.getMessage());

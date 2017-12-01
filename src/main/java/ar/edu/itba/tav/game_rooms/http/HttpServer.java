@@ -19,8 +19,10 @@ import ar.edu.itba.tav.game_rooms.http.dto.GameRoomDto;
 import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.GameRoomCreationResult;
 import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.GameRoomDataMessage;
 import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.GameRoomRemovalResult;
+import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages;
 import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.CreateGameRoomRequest;
 import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.GetAllGameRoomsRequest;
+import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.GetGameRoomRequest;
 import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.RemoveGameRoomRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +35,7 @@ import scala.concurrent.duration.FiniteDuration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
@@ -155,8 +158,9 @@ public class HttpServer extends AllDirectives {
     private Route configureRoutes() {
         final Route[] routes = {
                 path(gameRoomsCollectionPathMatcher(), getAllGameRoomsRouteHandler()),
+                path(specificGameRoomPathMatcher(), getGameRoomRouteHandler()),
                 path(gameRoomsCollectionPathMatcher(), createGameRoomRouteHandler()),
-                path(deleteGameRoomPathMatcher(), removeGameRoomRouteHandler()),
+                path(specificGameRoomPathMatcher(), removeGameRoomRouteHandler()),
         };
 
         return route(routes);
@@ -177,7 +181,7 @@ public class HttpServer extends AllDirectives {
     /**
      * @return A {@link PathMatcher1} of {@link String} to match the delete game room request (i.e /game-rooms/:name).
      */
-    private PathMatcher1<String> deleteGameRoomPathMatcher() {
+    private PathMatcher1<String> specificGameRoomPathMatcher() {
         return PathMatchers.segment(GAME_ROOMS_ENDPOINT).slash(PathMatchers.segment()).concat(PathMatchers.pathEnd());
     }
 
@@ -202,6 +206,24 @@ public class HttpServer extends AllDirectives {
                                     return complete(response);
                                 }));
     }
+
+    /**
+     * {@link Route} {@link Function} for a get game room by name request.
+     * Handles the request by communicating with a {@link HttpRequestHandlerActor},
+     * sending a {@link GetGameRoomRequest} message to it.
+     *
+     * @return The {@link Function} that creates a {@link Route}.
+     */
+    private Function<String, Route> getGameRoomRouteHandler() {
+        return gameRoomName ->
+                get(() ->
+                        extract(Function.identity(),
+                                ctx -> {
+                                    final HttpResponse response = getGameRoomResponse(gameRoomName, ctx);
+                                    return complete(response);
+                                }));
+    }
+
 
     /**
      * {@link Route} {@link Supplier} for a create game room request.
@@ -267,6 +289,42 @@ public class HttpServer extends AllDirectives {
             return HttpResponse.create()
                     .withStatus(StatusCodes.OK)
                     .withEntity(marshalled.toCompletableFuture().get());
+
+        } catch (TimeoutException e) {
+            return HttpResponse.create().withStatus(StatusCodes.REQUEST_TIMEOUT);
+        } catch (Exception e) {
+            return HttpResponse.create().withStatus(StatusCodes.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
+     * Creates an {@link HttpResponse} for a game room retrieval by name request.
+     *
+     * @param gameRoomName The name of the game room to be removed.
+     * @param context      The {@link RequestContext} from which request data will be taken.
+     * @return The {@link HttpResponse} for this request.
+     */
+    private HttpResponse getGameRoomResponse(String gameRoomName, RequestContext context) {
+        final long timeout = 5000;
+        HttpRequestMessages.GetGameRoomRequest request = GetGameRoomRequest.createRequest(gameRoomName, timeout);
+        try {
+            return this.<Optional<GameRoomDataMessage>>askToARequestHandlerActor(request, timeout)
+                    .map(game -> {
+                        final Uri locationUri = context.getRequest().getUri().addPathSegment(game.getName());
+                        return new GameRoomDto(game.getName(), game.getCapacity(), locationUri);
+                    })
+                    .map(gameDto -> new MarshalUnmarshal(actorSystem.dispatcher(), materializer)
+                            .apply(Jackson.marshaller(), gameDto))
+                    .map(CompletionStage::toCompletableFuture)
+                    .map(cf -> {
+                        try {
+                            return cf.get();
+                        } catch (InterruptedException | ExecutionException e) {
+                            throw new RuntimeException();
+                        }
+                    })
+                    .map(entity -> HttpResponse.create().withStatus(StatusCodes.OK).withEntity(entity))
+                    .orElse(HttpResponse.create().withStatus(StatusCodes.NOT_FOUND));
 
         } catch (TimeoutException e) {
             return HttpResponse.create().withStatus(StatusCodes.REQUEST_TIMEOUT);

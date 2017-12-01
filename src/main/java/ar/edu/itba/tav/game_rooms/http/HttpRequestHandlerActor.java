@@ -10,6 +10,7 @@ import akka.util.Timeout;
 import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.*;
 import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.CreateGameRoomRequest;
 import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.GetAllGameRoomsRequest;
+import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.GetGameRoomRequest;
 import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.RemoveGameRoomRequest;
 import scala.concurrent.Await;
 import scala.concurrent.Future;
@@ -18,6 +19,7 @@ import scala.concurrent.duration.FiniteDuration;
 
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -42,7 +44,8 @@ import java.util.concurrent.TimeUnit;
     @Override
     public Receive createReceive() {
         return ReceiveBuilder.create()
-                .match(GetAllGameRoomsRequest.class, this::handlerGetAllGameRoomsRequest)
+                .match(GetAllGameRoomsRequest.class, this::handleGetAllGameRoomsRequest)
+                .match(GetGameRoomRequest.class, this::handleGetGameRoomRequest)
                 .match(CreateGameRoomRequest.class, this::handleCreateGameRoomRequest)
                 .match(RemoveGameRoomRequest.class, this::handleRemoveGameRoomRequest)
                 .build();
@@ -53,10 +56,22 @@ import java.util.concurrent.TimeUnit;
      *
      * @param request The request to be handled.
      */
-    private void handlerGetAllGameRoomsRequest(GetAllGameRoomsRequest request) {
+    private void handleGetAllGameRoomsRequest(GetAllGameRoomsRequest request) {
         final GetAllGameRoomsMessage msg = GetAllGameRoomsMessage.getMessage();
-        final List<String> gameRooms = askTheGameRoomManager(msg, request.getTimeout(), new LinkedList<>());
+        final List<GameRoomDataMessage> gameRooms = askTheGameRoomManager(msg, request.getTimeout(), new LinkedList<>());
         reportSender(gameRooms);
+    }
+
+    /**
+     * Handles a {@link GetGameRoomRequest}.
+     *
+     * @param request The request to be handled.
+     */
+    private void handleGetGameRoomRequest(GetGameRoomRequest request) {
+        final GetSpecificGameRoomMessage msg = GetSpecificGameRoomMessage.getMessage(request.getGameRoomName());
+        final Optional<GameRoomDataMessage> gameRoom =
+                askTheGameRoomManager(msg, request.getTimeout(), Optional.empty());
+        reportSender(gameRoom);
     }
 
     /**
