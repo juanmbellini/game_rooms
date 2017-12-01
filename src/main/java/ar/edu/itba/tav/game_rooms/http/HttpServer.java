@@ -22,6 +22,7 @@ import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.GameRoomRem
 import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.PlayerOperationResult;
 import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages;
 import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.*;
+import ar.edu.itba.tav.game_rooms.messages.SystemMonitorMessages;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.squbs.marshallers.MarshalUnmarshal;
@@ -87,17 +88,24 @@ public class HttpServer extends AllDirectives {
      */
     private final ActorRef gameRoomManager;
 
+    /**
+     * An {@link ActorRef} to the system monitor.
+     */
+    private final ActorRef systemMonitor;
+
 
     /**
      * Private constructor.
      *
      * @param system          The {@link ActorSystem}.
      * @param gameRoomManager An {@link ActorRef} to the game rooms manager.
+     * @param systemMonitor   An {@link ActorRef} to the system monitor.
      */
-    private HttpServer(ActorSystem system, ActorRef gameRoomManager) {
+    private HttpServer(ActorSystem system, ActorRef gameRoomManager, ActorRef systemMonitor) {
         this.actorSystem = system;
         this.gameRoomsManagerPath = gameRoomManager.path();
         this.gameRoomManager = gameRoomManager;
+        this.systemMonitor = systemMonitor;
         this.binding = null;
         this.http = Http.get(system);
         this.materializer = ActorMaterializer.create(system);
@@ -155,6 +163,7 @@ public class HttpServer extends AllDirectives {
 
     private static final String GAME_ROOMS_ENDPOINT = "game-rooms";
     private static final String PLAYERS_ENDPOINT = "players";
+    private static final String SYSTEM_MONITOR_ENDPOINT = "monitor";
 
     /**
      * Configures the routes this server will handle.
@@ -163,12 +172,15 @@ public class HttpServer extends AllDirectives {
      */
     private Route configureRoutes() {
         final Route[] routes = {
+                // Game rooms
                 path(gameRoomsCollectionPathMatcher(), getAllGameRoomsRouteHandler()),
                 path(specificGameRoomPathMatcher(), getGameRoomRouteHandler()),
                 path(gameRoomsCollectionPathMatcher(), createGameRoomRouteHandler()),
                 path(specificGameRoomPathMatcher(), removeGameRoomRouteHandler()),
                 path(gameRoomAndPlayerPathMatcher(), addPlayerRouteHandler()),
                 path(gameRoomAndPlayerPathMatcher(), removePlayerRouteHandler()),
+                // System monitor
+                path(getSystemMonitorPathMatcher(), getMonitorDataRouteHandler()),
         };
 
         return route(routes);
@@ -203,6 +215,13 @@ public class HttpServer extends AllDirectives {
                 .slash(PathMatchers.segment(PLAYERS_ENDPOINT))
                 .slash(PathMatchers.longSegment())
                 .concat(PathMatchers.pathEnd());
+    }
+
+    /**
+     * @return A {@link PathMatcher0} to match the system monitor path (i.e /monitor).
+     */
+    private PathMatcher0 getSystemMonitorPathMatcher() {
+        return PathMatchers.segment(SYSTEM_MONITOR_ENDPOINT);
     }
 
 
@@ -312,6 +331,19 @@ public class HttpServer extends AllDirectives {
                     final HttpResponse response = removePlayerResponse(gameRoomName, playerId);
                     return complete(response);
                 });
+    }
+
+    /**
+     * {@link Route} {@link Supplier} for a get system monitor data request.
+     * Handles the request by communicating with a {@link HttpRequestHandlerActor},
+     * sending a {@link GetSystemMonitorDataRequest} message to it.
+     *
+     * @return The {@link Route} {@link Supplier}.
+     */
+    private Supplier<Route> getMonitorDataRouteHandler() {
+        return () ->
+                get(() ->
+                        complete(getSystemMonitorDataResponse()));
     }
 
 
@@ -474,6 +506,39 @@ public class HttpServer extends AllDirectives {
     }
 
     /**
+     * Creates an {@link HttpResponse} for getting the system monitor data.
+     *
+     * @return The {@link HttpResponse} for this request.
+     */
+    private HttpResponse getSystemMonitorDataResponse() {
+        final long timeout = 2000;
+        final GetSystemMonitorDataRequest request = GetSystemMonitorDataRequest.getMessage(timeout);
+        try {
+            final Object result = askToARequestHandlerActor(request, timeout);
+            if (result instanceof SystemMonitorMessages.SystemMonitorData) {
+
+                final SystemMonitorMessages.SystemMonitorData data = (SystemMonitorMessages.SystemMonitorData) result;
+                final CompletionStage<RequestEntity> marshalled =
+                        new MarshalUnmarshal(actorSystem.dispatcher(), materializer)
+                                .apply(Jackson.marshaller(), data);
+                return HttpResponse.create()
+                        .withStatus(StatusCodes.OK)
+                        .withEntity(marshalled.toCompletableFuture().get());
+
+            } else if (result instanceof SystemMonitorMessages.SystemMonitorNotStartedMessage) {
+                return HttpResponse.create()
+                        .withStatus(StatusCodes.SERVICE_UNAVAILABLE);
+            } else {
+                return HttpResponse.create().withStatus(StatusCodes.INTERNAL_SERVER_ERROR);
+            }
+        } catch (TimeoutException e) {
+            return HttpResponse.create().withStatus(StatusCodes.REQUEST_TIMEOUT);
+        } catch (Exception e) {
+            return HttpResponse.create().withStatus(StatusCodes.INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    /**
      * Creates an {@link HttpResponse} for operating with a player in a game room request.
      *
      * @param timeout The timeout for the request
@@ -499,6 +564,7 @@ public class HttpServer extends AllDirectives {
         return HttpResponse.create().withStatus(StatusCodes.INTERNAL_SERVER_ERROR);
     }
 
+
     // ========================================================
     // Helper methods
     // ========================================================
@@ -513,7 +579,8 @@ public class HttpServer extends AllDirectives {
      * @throws Exception If anything goes wrong.
      */
     private <T> T askToARequestHandlerActor(Object question, long timeout) throws Exception {
-        final ActorRef handlerActor = actorSystem.actorOf(HttpRequestHandlerActor.getProps(gameRoomsManagerPath));
+        final ActorRef handlerActor = actorSystem
+                .actorOf(HttpRequestHandlerActor.getProps(gameRoomsManagerPath, systemMonitor));
         final FiniteDuration duration = Duration.create(timeout, TimeUnit.MILLISECONDS);
         final Future<?> future = Patterns.ask(handlerActor, question, new Timeout(duration));
 
@@ -531,10 +598,11 @@ public class HttpServer extends AllDirectives {
      *
      * @param actorSystem     The {@link ActorSystem}.
      * @param gameRoomManager An {@link ActorRef} to the game rooms manager.
+     * @param systemMonitor   An {@link ActorRef} to the system monitor.
      * @return A new {@link HttpServer}.
      */
-    public static HttpServer createServer(ActorSystem actorSystem, ActorRef gameRoomManager) {
+    public static HttpServer createServer(ActorSystem actorSystem, ActorRef gameRoomManager, ActorRef systemMonitor) {
         LOGGER.info("Creating a new HttpServer instance using {} actor system", actorSystem);
-        return new HttpServer(actorSystem, gameRoomManager);
+        return new HttpServer(actorSystem, gameRoomManager, systemMonitor);
     }
 }

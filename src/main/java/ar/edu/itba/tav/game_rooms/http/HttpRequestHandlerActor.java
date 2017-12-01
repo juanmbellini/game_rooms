@@ -1,14 +1,12 @@
 package ar.edu.itba.tav.game_rooms.http;
 
-import akka.actor.AbstractActor;
-import akka.actor.ActorPath;
-import akka.actor.ActorSelection;
-import akka.actor.Props;
+import akka.actor.*;
 import akka.japi.pf.ReceiveBuilder;
 import akka.pattern.Patterns;
 import akka.util.Timeout;
 import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.*;
 import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.*;
+import ar.edu.itba.tav.game_rooms.messages.SystemMonitorMessages.GetDataMessage;
 import scala.concurrent.Await;
 import scala.concurrent.Future;
 import scala.concurrent.duration.Duration;
@@ -30,12 +28,19 @@ import java.util.concurrent.TimeUnit;
     private final ActorPath gameRoomManagerPath;
 
     /**
+     * The {@link ActorRef} for the system monitor.
+     */
+    private final ActorRef systemMonitor;
+
+    /**
      * Private constructor.
      *
      * @param gameRoomManagerPath The path of the game room manager.
+     * @param systemMonitor       The {@link ActorRef} for the system monitor.
      */
-    private HttpRequestHandlerActor(ActorPath gameRoomManagerPath) {
+    private HttpRequestHandlerActor(ActorPath gameRoomManagerPath, ActorRef systemMonitor) {
         this.gameRoomManagerPath = gameRoomManagerPath;
+        this.systemMonitor = systemMonitor;
     }
 
     @Override
@@ -47,6 +52,7 @@ import java.util.concurrent.TimeUnit;
                 .match(RemoveGameRoomRequest.class, this::handleRemoveGameRoomRequest)
                 .match(AddPlayerToGameRoomRequest.class, this::handleAddPlayerToGameRoomRequest)
                 .match(RemovePlayerFromGameRoomRequest.class, this::handleRemovePlayerToGameRoomRequest)
+                .match(GetSystemMonitorDataRequest.class, msg -> this.handleSystemMonitorRequest())
                 .build();
     }
 
@@ -119,6 +125,15 @@ import java.util.concurrent.TimeUnit;
     }
 
     /**
+     * Handles the process of requesting the system monitor for data.
+     */
+    private void handleSystemMonitorRequest() {
+        final Future<Object> future = Patterns.ask(systemMonitor, GetDataMessage.getMessage(), 100);
+        Patterns.pipe(future, getContext().dispatcher()).to(getSender());
+    }
+
+
+    /**
      * Asks the game room manager to create a game room.
      *
      * @param question The {@link CreateGameRoomMessage} representing the request to the game room manager.
@@ -139,6 +154,7 @@ import java.util.concurrent.TimeUnit;
     private GameRoomRemovalResult askTheGameRoomManagerToRemoveAGameRoom(RemoveGameRoomMessage question, long timeout) {
         return askTheGameRoomManager(question, timeout, GameRoomRemovalResult.FAILURE);
     }
+
 
     /**
      * Method that wraps logic to ask something to the game rooms manager.
@@ -174,11 +190,12 @@ import java.util.concurrent.TimeUnit;
      * Create {@link Props} for an {@link akka.actor.Actor} of this type.
      *
      * @param gameRoomManagerPath The path of the game room manager.
+     * @param systemMonitor       The {@link ActorRef} for the system monitor.
      * @return The created {@link Props}.
      */
     /* package */
-    static Props getProps(ActorPath gameRoomManagerPath) {
-        return Props.create(HttpRequestHandlerActor.class, () -> new HttpRequestHandlerActor(gameRoomManagerPath));
+    static Props getProps(ActorPath gameRoomManagerPath, ActorRef systemMonitor) {
+        return Props.create(HttpRequestHandlerActor.class, () -> new HttpRequestHandlerActor(gameRoomManagerPath, systemMonitor));
     }
 
 }
