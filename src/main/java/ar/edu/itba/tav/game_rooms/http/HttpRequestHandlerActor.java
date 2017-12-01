@@ -8,10 +8,7 @@ import akka.japi.pf.ReceiveBuilder;
 import akka.pattern.Patterns;
 import akka.util.Timeout;
 import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.*;
-import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.CreateGameRoomRequest;
-import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.GetAllGameRoomsRequest;
-import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.GetGameRoomRequest;
-import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.RemoveGameRoomRequest;
+import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.*;
 import scala.concurrent.Await;
 import scala.concurrent.Future;
 import scala.concurrent.duration.Duration;
@@ -48,6 +45,8 @@ import java.util.concurrent.TimeUnit;
                 .match(GetGameRoomRequest.class, this::handleGetGameRoomRequest)
                 .match(CreateGameRoomRequest.class, this::handleCreateGameRoomRequest)
                 .match(RemoveGameRoomRequest.class, this::handleRemoveGameRoomRequest)
+                .match(AddPlayerToGameRoomRequest.class, this::handleAddPlayerToGameRoomRequest)
+                .match(RemovePlayerFromGameRoomRequest.class, this::handleRemovePlayerToGameRoomRequest)
                 .build();
     }
 
@@ -98,6 +97,26 @@ import java.util.concurrent.TimeUnit;
         reportSender(result);
     }
 
+    /**
+     * Handles a {@link AddPlayerToGameRoomRequest}.
+     *
+     * @param request The request to be handled.
+     */
+    private void handleAddPlayerToGameRoomRequest(AddPlayerToGameRoomRequest request) {
+        final AddPlayerMessage msg = AddPlayerMessage.getMessage(request.getGameRoomName(), request.getPlayerId());
+        reportSender(askTheGameRoomManager(msg, request.getTimeout(), PlayerOperationResult.FAILURE));
+    }
+
+    /**
+     * Handles a {@link RemovePlayerFromGameRoomRequest}.
+     *
+     * @param request The request to be handled.
+     */
+    private void handleRemovePlayerToGameRoomRequest(RemovePlayerFromGameRoomRequest request) {
+        final RemovePlayerMessage msg = RemovePlayerMessage
+                .getMessage(request.getGameRoomName(), request.getPlayerId());
+        reportSender(askTheGameRoomManager(msg, request.getTimeout(), PlayerOperationResult.FAILURE));
+    }
 
     /**
      * Asks the game room manager to create a game room.

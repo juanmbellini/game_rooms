@@ -78,7 +78,7 @@ public class GameRoomOperationMessages {
         /**
          * The players in the game room.
          */
-        private final Set<String> players;
+        private final Set<Long> players;
 
         /**
          * Constructor.
@@ -87,7 +87,7 @@ public class GameRoomOperationMessages {
          * @param capacity The game room capacity.
          * @param players  The players in the game room.
          */
-        public GameRoomDataMessage(String name, int capacity, Set<String> players) {
+        public GameRoomDataMessage(String name, int capacity, Set<Long> players) {
             this.name = name;
             this.capacity = capacity;
             this.players = Collections.unmodifiableSet(players);
@@ -110,9 +110,32 @@ public class GameRoomOperationMessages {
         /**
          * @return The players in the game room.
          */
-        public Set<String> getPlayers() {
+        public Set<Long> getPlayers() {
             return players;
         }
+    }
+
+    /**
+     * Enum containing results that can occur while performing player operations over a game room
+     * (i.e adding or removing a game room).
+     */
+    public enum PlayerOperationResult implements ResultEnum {
+        /**
+         * The operation was successful.
+         */
+        SUCCESSFUL,
+        /**
+         * No game room with the given name.
+         */
+        NO_SUCH_GAME_ROOM,
+        /**
+         * Tried to add a player in a game room which reached it's capacity.
+         */
+        FULL_GAME_ROOM,
+        /**
+         * Something unexpected happened while trying to perform the operation.
+         */
+        FAILURE,
     }
 
 
@@ -258,6 +281,90 @@ public class GameRoomOperationMessages {
             return new RemoveGameRoomMessage(gameRoomName);
         }
     }
+
+    /**
+     * Message to be sent when referring a game room and a player (i.e adding/removing a player into/from a game room).
+     */
+    private abstract static class PlayerMessage extends GameRoomMessage {
+
+        /**
+         * The id of the player being referred.
+         */
+        private final long playerId;
+
+        /**
+         * Private constructor.
+         *
+         * @param gameRoomName The game room's name in which the operation must be done.
+         * @param playerId     The id of the player being referred.
+         */
+        private PlayerMessage(String gameRoomName, long playerId) {
+            super(gameRoomName);
+            this.playerId = playerId;
+        }
+
+        /**
+         * @return The id of the player being referred.
+         */
+        public long getPlayerId() {
+            return playerId;
+        }
+    }
+
+    /**
+     * Message to be sent when adding a player into a game room.
+     */
+    public final static class AddPlayerMessage extends PlayerMessage {
+
+        /**
+         * Private constructor.
+         *
+         * @param gameRoomName The game room's name in which the operation must be done.
+         * @param playerId     The id of the player being added.
+         */
+        private AddPlayerMessage(String gameRoomName, long playerId) {
+            super(gameRoomName, playerId);
+        }
+
+        /**
+         * Static method to create a {@link AddPlayerMessage}.
+         *
+         * @param gameRoomName The game room's name in which the operation must be done.
+         * @param playerId     The id of the player being added.
+         * @return The new {@link AddPlayerMessage}.
+         */
+        public static AddPlayerMessage getMessage(String gameRoomName, long playerId) {
+            return new AddPlayerMessage(gameRoomName, playerId);
+        }
+    }
+
+    /**
+     * Message to be sent when removing a player from a game room.
+     */
+    public final static class RemovePlayerMessage extends PlayerMessage {
+
+        /**
+         * Private constructor.
+         *
+         * @param gameRoomName The game room's name in which the operation must be done.
+         * @param playerId     The id of the player being removed.
+         */
+        private RemovePlayerMessage(String gameRoomName, long playerId) {
+            super(gameRoomName, playerId);
+        }
+
+        /**
+         * Static method to create a {@link RemovePlayerMessage}.
+         *
+         * @param gameRoomName The game room's name in which the operation must be done.
+         * @param playerId     The id of the player being removed.
+         * @return The new {@link RemovePlayerMessage}.
+         */
+        public static RemovePlayerMessage getMessage(String gameRoomName, long playerId) {
+            return new RemovePlayerMessage(gameRoomName, playerId);
+        }
+    }
+
 
     /**
      * Message to be sent from the game room manager to a game room to request it's data.

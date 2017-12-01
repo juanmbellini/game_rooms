@@ -19,11 +19,9 @@ import ar.edu.itba.tav.game_rooms.http.dto.GameRoomDto;
 import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.GameRoomCreationResult;
 import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.GameRoomDataMessage;
 import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.GameRoomRemovalResult;
+import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.PlayerOperationResult;
 import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages;
-import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.CreateGameRoomRequest;
-import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.GetAllGameRoomsRequest;
-import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.GetGameRoomRequest;
-import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.RemoveGameRoomRequest;
+import ar.edu.itba.tav.game_rooms.messages.HttpRequestMessages.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.squbs.marshallers.MarshalUnmarshal;
@@ -38,6 +36,7 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -83,16 +82,22 @@ public class HttpServer extends AllDirectives {
      */
     private final ActorPath gameRoomsManagerPath;
 
+    /**
+     * An {@link ActorRef} to the game rooms manager.
+     */
+    private final ActorRef gameRoomManager;
+
 
     /**
      * Private constructor.
      *
-     * @param system               The {@link ActorSystem}.
-     * @param gameRoomsManagerPath The path of the game room manager.
+     * @param system          The {@link ActorSystem}.
+     * @param gameRoomManager An {@link ActorRef} to the game rooms manager.
      */
-    private HttpServer(ActorSystem system, ActorPath gameRoomsManagerPath) {
+    private HttpServer(ActorSystem system, ActorRef gameRoomManager) {
         this.actorSystem = system;
-        this.gameRoomsManagerPath = gameRoomsManagerPath;
+        this.gameRoomsManagerPath = gameRoomManager.path();
+        this.gameRoomManager = gameRoomManager;
         this.binding = null;
         this.http = Http.get(system);
         this.materializer = ActorMaterializer.create(system);
@@ -149,6 +154,7 @@ public class HttpServer extends AllDirectives {
     // ========================================================
 
     private static final String GAME_ROOMS_ENDPOINT = "game-rooms";
+    private static final String PLAYERS_ENDPOINT = "players";
 
     /**
      * Configures the routes this server will handle.
@@ -161,6 +167,8 @@ public class HttpServer extends AllDirectives {
                 path(specificGameRoomPathMatcher(), getGameRoomRouteHandler()),
                 path(gameRoomsCollectionPathMatcher(), createGameRoomRouteHandler()),
                 path(specificGameRoomPathMatcher(), removeGameRoomRouteHandler()),
+                path(gameRoomAndPlayerPathMatcher(), addPlayerRouteHandler()),
+                path(gameRoomAndPlayerPathMatcher(), removePlayerRouteHandler()),
         };
 
         return route(routes);
@@ -179,10 +187,22 @@ public class HttpServer extends AllDirectives {
     }
 
     /**
-     * @return A {@link PathMatcher1} of {@link String} to match the delete game room request (i.e /game-rooms/:name).
+     * @return A {@link PathMatcher1} of {@link String} to match the specific game room path (i.e /game-rooms/:name).
      */
     private PathMatcher1<String> specificGameRoomPathMatcher() {
         return PathMatchers.segment(GAME_ROOMS_ENDPOINT).slash(PathMatchers.segment()).concat(PathMatchers.pathEnd());
+    }
+
+    /**
+     * @return A {@link PathMatcher2} of {@link String} and {@link Long} to match a game room and a player
+     * (i.e /game-rooms/:name/players/:player-id).
+     */
+    private PathMatcher2<String, Long> gameRoomAndPlayerPathMatcher() {
+        return PathMatchers.segment(GAME_ROOMS_ENDPOINT)
+                .slash(PathMatchers.segment())
+                .slash(PathMatchers.segment(PLAYERS_ENDPOINT))
+                .slash(PathMatchers.longSegment())
+                .concat(PathMatchers.pathEnd());
     }
 
 
@@ -260,6 +280,40 @@ public class HttpServer extends AllDirectives {
                 });
     }
 
+    /**
+     * {@link Route} {@link BiFunction} for an add player to game room request,
+     * taking a string and a long as input argument.
+     * Handles the request by communicating with a {@link HttpRequestHandlerActor},
+     * sending a {@link AddPlayerToGameRoomRequest} message to it,
+     * getting the game room name and player id from the input arguments.
+     *
+     * @return The {@link BiFunction} that creates the {@link Route}.
+     */
+    private BiFunction<String, Long, Route> addPlayerRouteHandler() {
+        return (gameRoomName, playerId) ->
+                put(() -> {
+                    final HttpResponse response = addPlayerResponse(gameRoomName, playerId);
+                    return complete(response);
+                });
+    }
+
+    /**
+     * {@link Route} {@link BiFunction} for a remove player from game room request,
+     * taking a string and a long as input argument.
+     * Handles the request by communicating with a {@link HttpRequestHandlerActor},
+     * sending a {@link AddPlayerToGameRoomRequest} message to it,
+     * getting the game room name and player id from the input arguments.
+     *
+     * @return The {@link BiFunction} that creates the {@link Route}.
+     */
+    private BiFunction<String, Long, Route> removePlayerRouteHandler() {
+        return (gameRoomName, playerId) ->
+                delete(() -> {
+                    final HttpResponse response = removePlayerResponse(gameRoomName, playerId);
+                    return complete(response);
+                });
+    }
+
 
     // ========================================================
     // Responses methods
@@ -273,13 +327,13 @@ public class HttpServer extends AllDirectives {
      */
     private HttpResponse getAllGameRoomsResponse(RequestContext context) {
         final long timeout = 5000;
-        GetAllGameRoomsRequest request = GetAllGameRoomsRequest.createRequest(timeout);
+        final GetAllGameRoomsRequest request = GetAllGameRoomsRequest.createRequest(timeout);
         try {
             final List<GameRoomDataMessage> gameRoomsData = askToARequestHandlerActor(request, timeout);
             final List<GameRoomDto> gameRooms = gameRoomsData.stream()
                     .map(game -> {
                         final Uri locationUri = context.getRequest().getUri().addPathSegment(game.getName());
-                        return new GameRoomDto(game.getName(), game.getCapacity(), locationUri);
+                        return new GameRoomDto(game.getName(), game.getCapacity(), game.getPlayers(), locationUri);
                     })
                     .collect(Collectors.toList());
             final CompletionStage<RequestEntity> marshalled =
@@ -306,12 +360,12 @@ public class HttpServer extends AllDirectives {
      */
     private HttpResponse getGameRoomResponse(String gameRoomName, RequestContext context) {
         final long timeout = 5000;
-        HttpRequestMessages.GetGameRoomRequest request = GetGameRoomRequest.createRequest(gameRoomName, timeout);
+        final HttpRequestMessages.GetGameRoomRequest request = GetGameRoomRequest.createRequest(gameRoomName, timeout);
         try {
             return this.<Optional<GameRoomDataMessage>>askToARequestHandlerActor(request, timeout)
                     .map(game -> {
                         final Uri locationUri = context.getRequest().getUri().addPathSegment(game.getName());
-                        return new GameRoomDto(game.getName(), game.getCapacity(), locationUri);
+                        return new GameRoomDto(game.getName(), game.getCapacity(), game.getPlayers(), locationUri);
                     })
                     .map(gameDto -> new MarshalUnmarshal(actorSystem.dispatcher(), materializer)
                             .apply(Jackson.marshaller(), gameDto))
@@ -344,7 +398,7 @@ public class HttpServer extends AllDirectives {
         final long timeout = 2000;
         final String gameRoomName = gameRoomDto.getName();
         final int capacity = gameRoomDto.getCapacity();
-        CreateGameRoomRequest request = CreateGameRoomRequest.createRequest(gameRoomName, capacity, timeout);
+        final CreateGameRoomRequest request = CreateGameRoomRequest.createRequest(gameRoomName, capacity, timeout);
         try {
             switch ((GameRoomCreationResult) askToARequestHandlerActor(request, timeout)) {
                 case CREATED:
@@ -375,7 +429,7 @@ public class HttpServer extends AllDirectives {
      */
     private HttpResponse removeGameRoomResponse(String gameRoomName) {
         final long timeout = 5000;
-        RemoveGameRoomRequest request = RemoveGameRoomRequest.createRequest(gameRoomName, timeout);
+        final RemoveGameRoomRequest request = RemoveGameRoomRequest.createRequest(gameRoomName, timeout);
         try {
             switch ((GameRoomRemovalResult) askToARequestHandlerActor(request, timeout)) {
                 case NO_SUCH_GAME_ROOM:
@@ -383,6 +437,58 @@ public class HttpServer extends AllDirectives {
                     return HttpResponse.create().withStatus(StatusCodes.NO_CONTENT);
                 case FAILURE:
                     return HttpResponse.create().withStatus(StatusCodes.INTERNAL_SERVER_ERROR);
+            }
+        } catch (TimeoutException e) {
+            return HttpResponse.create().withStatus(StatusCodes.REQUEST_TIMEOUT);
+        } catch (Exception e) {
+            return HttpResponse.create().withStatus(StatusCodes.INTERNAL_SERVER_ERROR);
+        }
+        // Won't never reach here
+        return HttpResponse.create().withStatus(StatusCodes.INTERNAL_SERVER_ERROR);
+    }
+
+    /**
+     * Creates an {@link HttpResponse} for adding a player into a game room request.
+     *
+     * @param gameRoomName The name of the game room to be operated into.
+     * @param playerId     The id of the player being added into the game room.
+     * @return The {@link HttpResponse} for this request.
+     */
+    private HttpResponse addPlayerResponse(String gameRoomName, long playerId) {
+        final long timeout = 2000;
+        return playerOperationResponse(timeout,
+                AddPlayerToGameRoomRequest.createRequest(gameRoomName, playerId, timeout));
+    }
+
+    /**
+     * Creates an {@link HttpResponse} for removing a player from a game room request.
+     *
+     * @param gameRoomName The name of the game room to be operated into.
+     * @param playerId     The id of the player being removed from the game room.
+     * @return The {@link HttpResponse} for this request.
+     */
+    private HttpResponse removePlayerResponse(String gameRoomName, long playerId) {
+        final long timeout = 2000;
+        return playerOperationResponse(timeout,
+                RemovePlayerFromGameRoomRequest.createRequest(gameRoomName, playerId, timeout));
+    }
+
+    /**
+     * Creates an {@link HttpResponse} for operating with a player in a game room request.
+     *
+     * @param timeout The timeout for the request
+     * @param request The object to be sent to the {@link HttpRequestHandlerActor} as a message.
+     * @return The {@link HttpResponse} for this request.
+     */
+    private HttpResponse playerOperationResponse(long timeout, Object request) {
+        try {
+            switch ((PlayerOperationResult) askToARequestHandlerActor(request, timeout)) {
+                case SUCCESSFUL:
+                    return HttpResponse.create().withStatus(StatusCodes.NO_CONTENT);
+                case NO_SUCH_GAME_ROOM:
+                    return HttpResponse.create().withStatus(StatusCodes.NOT_FOUND);
+                case FULL_GAME_ROOM:
+                    return HttpResponse.create().withStatus(StatusCodes.CONFLICT);
             }
         } catch (TimeoutException e) {
             return HttpResponse.create().withStatus(StatusCodes.REQUEST_TIMEOUT);
@@ -423,11 +529,12 @@ public class HttpServer extends AllDirectives {
     /**
      * Creates a new {@link HttpServer}.
      *
-     * @param actorSystem The {@link ActorSystem}.
+     * @param actorSystem     The {@link ActorSystem}.
+     * @param gameRoomManager An {@link ActorRef} to the game rooms manager.
      * @return A new {@link HttpServer}.
      */
-    public static HttpServer createServer(ActorSystem actorSystem, ActorPath gameRoomsManagerPath) {
+    public static HttpServer createServer(ActorSystem actorSystem, ActorRef gameRoomManager) {
         LOGGER.info("Creating a new HttpServer instance using {} actor system", actorSystem);
-        return new HttpServer(actorSystem, gameRoomsManagerPath);
+        return new HttpServer(actorSystem, gameRoomManager);
     }
 }

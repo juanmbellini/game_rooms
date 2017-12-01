@@ -49,7 +49,7 @@ public class MainActor extends AbstractActor {
                 .actorOf(GameRoomsManagerActor.getProps(), "game_rooms_manager");
 
         // Start http server
-        HttpServer.createServer(getContext().getSystem(), gameRoomsManagerRef.path())
+        HttpServer.createServer(getContext().getSystem(), gameRoomsManagerRef)
                 .start(message.getHttpServerHostname(), message.getHttpServerPort());
 
         this.started = true;

@@ -3,8 +3,7 @@ package ar.edu.itba.tav.game_rooms.core;
 import akka.actor.AbstractActor;
 import akka.actor.Props;
 import akka.japi.pf.ReceiveBuilder;
-import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.GameRoomDataMessage;
-import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.GetGameRoomDataMessage;
+import ar.edu.itba.tav.game_rooms.messages.GameRoomOperationMessages.*;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -27,7 +26,7 @@ public class GameRoomActor extends AbstractActor {
     /**
      * The players in this game room.
      */
-    private final Set<String> players;
+    private final Set<Long> players;
 
 
     /**
@@ -46,6 +45,8 @@ public class GameRoomActor extends AbstractActor {
     public Receive createReceive() {
         return ReceiveBuilder.create()
                 .match(GetGameRoomDataMessage.class, msg -> this.reportData())
+                .match(AddPlayerMessage.class, msg -> this.addPlayer(msg.getPlayerId()))
+                .match(RemovePlayerMessage.class, msg -> this.removePlayer(msg.getPlayerId()))
                 .build();
     }
 
@@ -54,6 +55,34 @@ public class GameRoomActor extends AbstractActor {
      */
     private void reportData() {
         getSender().tell(new GameRoomDataMessage(gameRoomName, capacity, players), this.getSelf());
+    }
+
+    /**
+     * Adds a player with the given {@code playerId} into the game room.
+     *
+     * @param playerId The id of the player being added.
+     */
+    private void addPlayer(long playerId) {
+        if (this.players.size() == this.capacity && !this.players.contains(playerId)) {
+            getSender().tell(PlayerOperationResult.FULL_GAME_ROOM, getSelf());
+            return;
+        }
+        // In case players.size != capacity, and the set already contains the id,
+        // The following call will not affect, as it can't hold repeated elements.
+        // It will just ignore it.
+        this.players.add(playerId);
+        getSender().tell(PlayerOperationResult.SUCCESSFUL, getSelf());
+    }
+
+    /**
+     * Removes a player with the given {@code playerId} from the game room.
+     * This is an idempotent action.
+     *
+     * @param playerId The id of the player being removed.
+     */
+    private void removePlayer(long playerId) {
+        this.players.remove(playerId); // Nothing happens if the set does not contain the id. This is idempotent.
+        getSender().tell(PlayerOperationResult.SUCCESSFUL, getSelf());
     }
 
     /**

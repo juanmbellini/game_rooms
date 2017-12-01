@@ -11,7 +11,6 @@ import scala.concurrent.ExecutionContext;
 import scala.concurrent.Future;
 
 import java.io.UnsupportedEncodingException;
-import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.util.*;
 
@@ -72,6 +71,8 @@ public class GameRoomsManagerActor extends AbstractActor {
                 .match(Terminated.class,
                         terminated -> this.terminatedActorsAndRequesters.containsKey(terminated.getActor()),
                         terminated -> this.removeGameRoom(terminated.getActor()))
+                .match(AddPlayerMessage.class, this::addPlayerToGameRoom)
+                .match(RemovePlayerMessage.class, this::removePlayerFromGameRoom)
                 .build();
     }
 
@@ -186,8 +187,42 @@ public class GameRoomsManagerActor extends AbstractActor {
         LOGGER.debug("Name \"{}\" is again available for a game room", gameRoomName);
     }
 
-    // TODO: join a game room (game room id + player id?)
+    /**
+     * Adds a player into a game room
+     *
+     * @param msg The {@link AddPlayerMessage} holding the needed data to perform the operation.
+     */
+    private void addPlayerToGameRoom(AddPlayerMessage msg) {
+        performPlayerOperation(msg.getGameRoomName(), msg);
+    }
 
+    /**
+     * Removes a player from a game room.
+     *
+     * @param msg The {@link AddPlayerMessage} holding the needed data to perform the operation.
+     */
+    private void removePlayerFromGameRoom(RemovePlayerMessage msg) {
+        performPlayerOperation(msg.getGameRoomName(), msg);
+    }
+
+    /**
+     * Performs the player operation, using the given {@code gameRoom}, to get the actor, and the given {@code msg}
+     * to resend it to it.
+     *
+     * @param gameRoomName The name of the game room to which the message must be pass through.
+     * @param msg          The message being forwarded.
+     * @param <T>          The concrete type of the message.
+     */
+    private <T> void performPlayerOperation(String gameRoomName, T msg) {
+        final ActorRef requester = this.getSender();
+        final ActorRef actorRef = gameRoomActors.get(gameRoomName);
+        if (actorRef == null) {
+            reportToActor(requester, PlayerOperationResult.NO_SUCH_GAME_ROOM);
+            return;
+        }
+        final Future<Object> future = Patterns.ask(actorRef, msg, 100);
+        Patterns.pipe(future, getContext().dispatcher()).to(requester);
+    }
 
     /**
      * Replies the given {@link ActorRef} with the given {@code result} value.

@@ -179,4 +179,92 @@ public class HttpRequestMessages {
             return new RemoveGameRoomRequest(gameRoomName, timeout);
         }
     }
+
+    /**
+     * An abstract request representing an operation with a player over a game room.
+     */
+    private abstract static class PlayerOverGameRoomOperationRequest extends GameRoomOperationRequest {
+
+        /**
+         * The id of the player being referred.
+         */
+        private final long playerId;
+
+        /**
+         * Private constructor.
+         *
+         * @param gameRoomName The game room's name in which the operation must be done.
+         * @param playerId     The id of the player being referred.
+         * @param timeout      The timeout for the request.
+         */
+        private PlayerOverGameRoomOperationRequest(String gameRoomName, long playerId, long timeout) {
+            super(gameRoomName, timeout);
+            this.playerId = playerId;
+        }
+
+        /**
+         * @return The id of the player being referred.
+         */
+        public long getPlayerId() {
+            return playerId;
+        }
+    }
+
+    /**
+     * A request for adding a player into a game room.
+     */
+    public final static class AddPlayerToGameRoomRequest extends PlayerOverGameRoomOperationRequest {
+
+        /**
+         * Private constructor.
+         *
+         * @param gameRoomName The game room's name in which the operation must be done.
+         * @param playerId     The id of the player being added.
+         * @param timeout      The timeout for the request.
+         */
+        private AddPlayerToGameRoomRequest(String gameRoomName, long playerId, long timeout) {
+            super(gameRoomName, playerId, timeout);
+        }
+
+        /**
+         * Static method to create a {@link AddPlayerToGameRoomRequest}.
+         *
+         * @param gameRoomName The game room's name in which the operation must be done.
+         * @param playerId     The id of the player being added.
+         * @param timeout      The timeout for the request.
+         * @return The new {@link AddPlayerToGameRoomRequest}.
+         */
+        public static AddPlayerToGameRoomRequest createRequest(String gameRoomName, long playerId, long timeout) {
+            return new AddPlayerToGameRoomRequest(gameRoomName, playerId, timeout);
+        }
+    }
+
+    /**
+     * A request for removing a player from a game room.
+     */
+    public final static class RemovePlayerFromGameRoomRequest extends PlayerOverGameRoomOperationRequest {
+
+        /**
+         * Private constructor.
+         *
+         * @param gameRoomName The game room's name in which the operation must be done.
+         * @param playerId     The id of the player being removed.
+         * @param timeout      The timeout for the request.
+         */
+        private RemovePlayerFromGameRoomRequest(String gameRoomName, long playerId, long timeout) {
+            super(gameRoomName, playerId, timeout);
+        }
+
+        /**
+         * Static method to create a {@link RemovePlayerFromGameRoomRequest}.
+         *
+         * @param gameRoomName The game room's name in which the operation must be done.
+         * @param playerId     The id of the player being removed.
+         * @param timeout      The timeout for the request.s
+         * @return The new {@link RemovePlayerFromGameRoomRequest}.
+         */
+        public static RemovePlayerFromGameRoomRequest createRequest(String gameRoomName, long playerId, long timeout) {
+            return new RemovePlayerFromGameRoomRequest(gameRoomName, playerId, timeout);
+        }
+    }
 }

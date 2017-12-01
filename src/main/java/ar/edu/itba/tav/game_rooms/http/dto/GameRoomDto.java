@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.databind.ser.std.StdSerializer;
 
 import java.io.IOException;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Data transfer object for a game room.
@@ -21,10 +23,17 @@ public class GameRoomDto {
     private String name;
 
     /**
-     * The game room capacity
+     * The game room capacity.
      */
     @JsonProperty
     private int capacity;
+
+    /**
+     * The {@link Set} of players in the game room.
+     */
+    @SuppressWarnings({"FieldCanBeLocal", "unused", "MismatchedQueryAndUpdateOfCollection"})
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private final Set<Long> players;
 
     /**
      * The url of the location of the game room represented by this dto.
@@ -39,18 +48,21 @@ public class GameRoomDto {
      */
     public GameRoomDto() {
         // For Jackson
+        this.players = new HashSet<>();
     }
 
     /**
      * Constructor.
      *
      * @param name        The game room name.
-     * @param capacity    The game room capacity
+     * @param capacity    The game room capacity.
+     * @param players     The players in the game room.
      * @param locationUrl The url of the location of the game room represented by this dto.
      */
-    public GameRoomDto(String name, int capacity, Uri locationUrl) {
+    public GameRoomDto(String name, int capacity, Set<Long> players, Uri locationUrl) {
         this.name = name;
         this.capacity = capacity;
+        this.players = players;
         this.locationUrl = locationUrl;
     }
 

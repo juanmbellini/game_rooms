@@ -24,6 +24,6 @@ public class Main {
         final ActorRef gameRoomsManagerRef = system
                 .actorOf(GameRoomsManagerActor.getProps(), "game_rooms_manager");
 
-        HttpServer.createServer(system, gameRoomsManagerRef.path()).start(9000);
+        HttpServer.createServer(system, gameRoomsManagerRef).start(9000);
     }
 }
