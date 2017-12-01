@@ -39,7 +39,7 @@ These instructions will install the system in your local machine.
 	$ cd game_rooms
 	```
 
-2. Install maven modules:
+2. Install project modules:
 
 	```
 	$ mvn clean install
@@ -50,6 +50,50 @@ These instructions will install the system in your local machine.
 	```
 	$ mvn clean package
 	```
+
+## Usage
+
+The system can be run executing the built jar. Run the following command in the console:
+
+```
+$ java -jar <path-to-jar>
+```
+If nothing was changed in the ```pom.xml``` file, and the output directory is the default, the path to the jar will be ```<PROJECT-ROOT>/target/game-rooms-1.0-SNAPSHOT.jar```, so the way to run the system is:
+
+```
+$ java -jar <PROJECT-ROOT>/target/game-rooms-1.0-SNAPSHOT.jar
+```
+You can customize the execution of the system including some options. The following sections will explain them.
+
+### Printing usage message
+
+To print the usage message, include the ```-h``` or ```--help``` options. For example:
+
+```
+$ java -jar <PROJECT-ROOT>/target/game-rooms-1.0-SNAPSHOT.jar --help
+```
+
+### Selecting the http server hostname
+
+To select the server hostname (i.e the binding address), include the ```-H``` or ```--host``` options.
+You can use an IP or a name (for instance, ```localhost```).
+For example:
+
+```
+$ java -jar <PROJECT-ROOT>/target/game-rooms-1.0-SNAPSHOT.jar -H 192.168.1.10
+```
+The default value is ```localhost```.
+
+### Selecting the http server listening port
+
+To select the server port, include the ```-p``` or ```--port``` options.
+You can set it to ```0``` to let the operating system choose for you.
+For example
+
+```
+$ java -jar <PROJECT-ROOT>/target/game-rooms-1.0-SNAPSHOT.jar -H 192.168.1.10 -p 8000
+```
+The default value is ```9000```.
 
 ## Author
 
